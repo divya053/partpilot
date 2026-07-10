@@ -3,20 +3,28 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: IK Part Number Portal API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: part-numbers
+    description: Part number management
+  - name: segments
+    description: Segment value configuration
+  - name: stats
+    description: Dashboard statistics
+  - name: import
+    description: Bulk import operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +32,404 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /part-numbers:
+    get:
+      operationId: listPartNumbers
+      tags: [part-numbers]
+      summary: List part numbers with search and filter
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 25 }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: productModel
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [draft, active, deprecated] }
+        - name: cct
+          in: query
+          schema: { type: string }
+        - name: finish
+          in: query
+          schema: { type: string }
+        - name: voltageRange
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated list of part numbers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartNumberList"
+    post:
+      operationId: createPartNumber
+      tags: [part-numbers]
+      summary: Create a new part number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartNumberInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartNumber"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Part number already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /part-numbers/decode:
+    post:
+      operationId: decodePartNumber
+      tags: [part-numbers]
+      summary: Decode a raw part number string into its segments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecodeInput"
+      responses:
+        "200":
+          description: Decoded segments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecodedPartNumber"
+        "400":
+          description: Invalid part number format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /part-numbers/recent:
+    get:
+      operationId: getRecentPartNumbers
+      tags: [part-numbers]
+      summary: Get the 10 most recently created or updated part numbers
+      responses:
+        "200":
+          description: Recent part numbers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PartNumber"
+
+  /part-numbers/{id}:
+    get:
+      operationId: getPartNumber
+      tags: [part-numbers]
+      summary: Get a single part number
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Part number found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartNumber"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updatePartNumber
+      tags: [part-numbers]
+      summary: Update a part number
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartNumberUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartNumber"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePartNumber
+      tags: [part-numbers]
+      summary: Delete a part number
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /part-numbers/{id}/duplicate:
+    post:
+      operationId: duplicatePartNumber
+      tags: [part-numbers]
+      summary: Duplicate a part number as a new draft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "201":
+          description: Duplicated draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartNumber"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /segments:
+    get:
+      operationId: listSegments
+      tags: [segments]
+      summary: List all segment definitions with their allowed values
+      responses:
+        "200":
+          description: All segment definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SegmentDefinition"
+
+  /segments/{key}:
+    get:
+      operationId: getSegment
+      tags: [segments]
+      summary: Get a single segment definition with its values
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Segment definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentDefinition"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /segments/{key}/values:
+    post:
+      operationId: addSegmentValue
+      tags: [segments]
+      summary: Add a new allowed value to a segment
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SegmentValueInput"
+      responses:
+        "201":
+          description: Value added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentValue"
+        "409":
+          description: Code already exists in segment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /segments/{key}/values/{code}:
+    patch:
+      operationId: updateSegmentValue
+      tags: [segments]
+      summary: Update description or applicability of a segment value
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SegmentValueUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentValue"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSegmentValue
+      tags: [segments]
+      summary: Remove an allowed value from a segment
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /stats:
+    get:
+      operationId: getDashboardStats
+      tags: [stats]
+      summary: Get dashboard summary statistics
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /stats/by-category:
+    get:
+      operationId: getStatsByCategory
+      tags: [stats]
+      summary: Get part number counts grouped by product category
+      responses:
+        "200":
+          description: Counts by category
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryCount"
+
+  /stats/by-model:
+    get:
+      operationId: getStatsByModel
+      tags: [stats]
+      summary: Get part number counts grouped by product model
+      responses:
+        "200":
+          description: Counts by model
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModelCount"
+
+  /import:
+    post:
+      operationId: bulkImportPartNumbers
+      tags: [import]
+      summary: Bulk import part numbers from a JSON array
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkImportInput"
+      responses:
+        "200":
+          description: Import result summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +440,498 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    PartNumber:
+      type: object
+      required:
+        - id
+        - partNumber
+        - productCategory
+        - productName
+        - company
+        - productModel
+        - versionVariant
+        - sizeVariant
+        - powerType
+        - maxPower
+        - voltageRange
+        - dimming
+        - cct
+        - lightDistribution
+        - driver
+        - finish
+        - manufacturer
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        partNumber:
+          type: string
+        productCategory:
+          type: string
+        productName:
+          type: string
+        sku:
+          type: ["string", "null"]
+        productDescription:
+          type: ["string", "null"]
+        internalNotes:
+          type: ["string", "null"]
+        company:
+          type: string
+        productModel:
+          type: string
+        versionVariant:
+          type: string
+        sizeVariant:
+          type: string
+        powerType:
+          type: string
+        maxPower:
+          type: string
+        voltageRange:
+          type: string
+        dimming:
+          type: string
+        cct:
+          type: string
+        lightDistribution:
+          type: string
+        driver:
+          type: string
+        finish:
+          type: string
+        manufacturer:
+          type: string
+        lensType:
+          type: ["string", "null"]
+        emergencyOption:
+          type: ["string", "null"]
+        sensorOption:
+          type: ["string", "null"]
+        surgeProtection:
+          type: ["string", "null"]
+        reflectorCover:
+          type: ["string", "null"]
+        mountingOption:
+          type: ["string", "null"]
+        photocontrolOption:
+          type: ["string", "null"]
+        connectableOption:
+          type: ["string", "null"]
+        base:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, active, deprecated]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PartNumberInput:
+      type: object
+      required:
+        - productCategory
+        - productName
+        - company
+        - productModel
+        - versionVariant
+        - sizeVariant
+        - powerType
+        - maxPower
+        - voltageRange
+        - dimming
+        - cct
+        - lightDistribution
+        - driver
+        - finish
+        - manufacturer
+      properties:
+        productCategory:
+          type: string
+        productName:
+          type: string
+        sku:
+          type: ["string", "null"]
+        productDescription:
+          type: ["string", "null"]
+        internalNotes:
+          type: ["string", "null"]
+        company:
+          type: string
+          default: "IK"
+        productModel:
+          type: string
+        versionVariant:
+          type: string
+        sizeVariant:
+          type: string
+        powerType:
+          type: string
+        maxPower:
+          type: string
+        voltageRange:
+          type: string
+        dimming:
+          type: string
+        cct:
+          type: string
+        lightDistribution:
+          type: string
+        driver:
+          type: string
+        finish:
+          type: string
+        manufacturer:
+          type: string
+        lensType:
+          type: ["string", "null"]
+        emergencyOption:
+          type: ["string", "null"]
+        sensorOption:
+          type: ["string", "null"]
+        surgeProtection:
+          type: ["string", "null"]
+        reflectorCover:
+          type: ["string", "null"]
+        mountingOption:
+          type: ["string", "null"]
+        photocontrolOption:
+          type: ["string", "null"]
+        connectableOption:
+          type: ["string", "null"]
+        base:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, active, deprecated]
+          default: "draft"
+
+    PartNumberUpdate:
+      type: object
+      properties:
+        productCategory:
+          type: string
+        productName:
+          type: string
+        sku:
+          type: ["string", "null"]
+        productDescription:
+          type: ["string", "null"]
+        internalNotes:
+          type: ["string", "null"]
+        productModel:
+          type: string
+        versionVariant:
+          type: string
+        sizeVariant:
+          type: string
+        powerType:
+          type: string
+        maxPower:
+          type: string
+        voltageRange:
+          type: string
+        dimming:
+          type: string
+        cct:
+          type: string
+        lightDistribution:
+          type: string
+        driver:
+          type: string
+        finish:
+          type: string
+        manufacturer:
+          type: string
+        lensType:
+          type: ["string", "null"]
+        emergencyOption:
+          type: ["string", "null"]
+        sensorOption:
+          type: ["string", "null"]
+        surgeProtection:
+          type: ["string", "null"]
+        reflectorCover:
+          type: ["string", "null"]
+        mountingOption:
+          type: ["string", "null"]
+        photocontrolOption:
+          type: ["string", "null"]
+        connectableOption:
+          type: ["string", "null"]
+        base:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [draft, active, deprecated]
+
+    DecodeInput:
+      type: object
+      required:
+        - partNumber
+      properties:
+        partNumber:
+          type: string
+
+    DecodedPartNumber:
+      type: object
+      required:
+        - raw
+        - valid
+        - segments
+      properties:
+        raw:
+          type: string
+        valid:
+          type: boolean
+        segments:
+          type: object
+          properties:
+            company:
+              type: ["string", "null"]
+            productModel:
+              type: ["string", "null"]
+            versionVariant:
+              type: ["string", "null"]
+            sizeVariant:
+              type: ["string", "null"]
+            powerType:
+              type: ["string", "null"]
+            maxPower:
+              type: ["string", "null"]
+            voltageRange:
+              type: ["string", "null"]
+            dimming:
+              type: ["string", "null"]
+            cct:
+              type: ["string", "null"]
+            lightDistribution:
+              type: ["string", "null"]
+            driver:
+              type: ["string", "null"]
+            finish:
+              type: ["string", "null"]
+            manufacturer:
+              type: ["string", "null"]
+            lensType:
+              type: ["string", "null"]
+            emergencyOption:
+              type: ["string", "null"]
+            sensorOption:
+              type: ["string", "null"]
+            surgeProtection:
+              type: ["string", "null"]
+            reflectorCover:
+              type: ["string", "null"]
+            mountingOption:
+              type: ["string", "null"]
+            photocontrolOption:
+              type: ["string", "null"]
+            connectableOption:
+              type: ["string", "null"]
+            base:
+              type: ["string", "null"]
+        errors:
+          type: array
+          items:
+            type: string
+
+    PartNumberList:
+      type: object
+      required:
+        - data
+        - total
+        - page
+        - limit
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartNumber"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    SegmentValue:
+      type: object
+      required:
+        - id
+        - segmentKey
+        - code
+        - description
+        - sortOrder
+        - isActive
+      properties:
+        id:
+          type: integer
+        segmentKey:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        applicableProducts:
+          type: array
+          items:
+            type: string
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+
+    SegmentDefinition:
+      type: object
+      required:
+        - key
+        - label
+        - isRequired
+        - isOptional
+        - values
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        isRequired:
+          type: boolean
+        isOptional:
+          type: boolean
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/SegmentValue"
+
+    SegmentValueInput:
+      type: object
+      required:
+        - code
+        - description
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+        applicableProducts:
+          type: array
+          items:
+            type: string
+        sortOrder:
+          type: integer
+
+    SegmentValueUpdate:
+      type: object
+      properties:
+        description:
+          type: string
+        applicableProducts:
+          type: array
+          items:
+            type: string
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+
+    DashboardStats:
+      type: object
+      required:
+        - total
+        - active
+        - draft
+        - deprecated
+        - totalCategories
+        - totalModels
+        - createdThisMonth
+        - createdThisWeek
+      properties:
+        total:
+          type: integer
+        active:
+          type: integer
+        draft:
+          type: integer
+        deprecated:
+          type: integer
+        totalCategories:
+          type: integer
+        totalModels:
+          type: integer
+        createdThisMonth:
+          type: integer
+        createdThisWeek:
+          type: integer
+
+    CategoryCount:
+      type: object
+      required:
+        - category
+        - count
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+
+    ModelCount:
+      type: object
+      required:
+        - model
+        - count
+        - category
+      properties:
+        model:
+          type: string
+        count:
+          type: integer
+        category:
+          type: string
+
+    BulkImportInput:
+      type: object
+      required:
+        - partNumbers
+      properties:
+        partNumbers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartNumberInput"
+
+    ImportResult:
+      type: object
+      required:
+        - created
+        - skipped
+        - errors
+      properties:
+        created:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - index
+              - message
+            properties:
+              index:
+                type: integer
+              message:
+                type: string
