@@ -1,9 +1,33 @@
 import { useGetDashboardStats, useGetStatsByCategory, useGetStatsByModel, useGetRecentPartNumbers } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Layers, Activity, FileDigit, Ban, PlusCircle, Calendar } from "lucide-react";
+import { AiInsights } from "@/components/ai/ai-insights";
+import { LearningStatus } from "@/components/ai/learning-status";
+import { Layers, Activity, FileDigit, Ban, PlusCircle, Calendar, Boxes, BarChart3, PieChart as PieChartIcon } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof Boxes;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="flex w-full max-w-sm flex-col items-center rounded-xl border border-dashed border-border/80 bg-muted/30 px-6 py-10 text-center">
+        <div className="mb-4 rounded-full bg-background p-3 shadow-sm">
+          <Icon className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats();
@@ -14,7 +38,7 @@ export default function Dashboard() {
   const PIE_COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
 
   return (
-    <div className="p-8 space-y-8 animate-in fade-in zoom-in-95 duration-300">
+    <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
@@ -28,14 +52,16 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      <LearningStatus />
+
       {statsLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
           {[1, 2, 3, 4].map(i => (
             <Card key={i} className="h-32 animate-pulse bg-muted/50 border-muted" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
           <Card className="border-l-4 border-l-primary shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Parts</CardTitle>
@@ -82,13 +108,19 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <AiInsights
+        scope="dashboard"
+        title="What needs your attention"
+        description="Live analysis of your registry — updates as you add parts."
+      />
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Card className="col-span-1 shadow-sm border-border/60">
           <CardHeader>
             <CardTitle className="text-lg">Part Categories</CardTitle>
             <CardDescription>Distribution of parts by category</CardDescription>
           </CardHeader>
-          <CardContent className="h-72 flex items-center justify-center">
+          <CardContent className="h-80">
             {categoriesLoading ? (
               <div className="animate-pulse w-48 h-48 rounded-full bg-muted/50" />
             ) : (categoryStats && categoryStats.length > 0) ? (
@@ -114,17 +146,21 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-muted-foreground text-sm">No data available</div>
+              <EmptyState
+                icon={PieChartIcon}
+                title="No category data yet"
+                description="Create your first part number and category distribution will appear here."
+              />
             )}
           </CardContent>
         </Card>
 
-        <Card className="col-span-1 lg:col-span-2 shadow-sm border-border/60">
+        <Card className="col-span-1 xl:col-span-2 shadow-sm border-border/60">
           <CardHeader>
             <CardTitle className="text-lg">Parts by Model</CardTitle>
             <CardDescription>Top models by part count</CardDescription>
           </CardHeader>
-          <CardContent className="h-72">
+          <CardContent className="h-80">
             {modelsLoading ? (
                <div className="w-full h-full animate-pulse bg-muted/30 rounded-md" />
             ) : (modelStats && modelStats.length > 0) ? (
@@ -141,7 +177,11 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-muted-foreground text-sm">No data available</div>
+              <EmptyState
+                icon={BarChart3}
+                title="No model activity yet"
+                description="Once records are added, this chart will show the most-used product models."
+              />
             )}
           </CardContent>
         </Card>
@@ -204,7 +244,13 @@ export default function Dashboard() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">No recent parts found</td>
+                  <td colSpan={5} className="px-6 py-10">
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 py-8 text-center">
+                      <Boxes className="h-6 w-6 text-muted-foreground" />
+                      <p className="mt-3 text-sm font-medium text-foreground">No recent parts found</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Use the builder to create the first part number record.</p>
+                    </div>
+                  </td>
                 </tr>
               )}
             </tbody>

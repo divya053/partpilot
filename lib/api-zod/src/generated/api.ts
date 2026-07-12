@@ -9,6 +9,266 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Log in with username and password
+ */
+
+
+
+
+export const LoginUserBody = zod.object({
+  "username": zod.string().min(1),
+  "password": zod.string().min(1)
+})
+
+export const LoginUserResponse = zod.object({
+  "id": zod.number(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "role": zod.enum(['master', 'creator', 'viewer'])
+})
+
+
+/**
+ * @summary Log out the current user
+ */
+export const LogoutUserResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+/**
+ * @summary Get the currently authenticated user (null if not logged in)
+ */
+export const GetCurrentUserResponse = zod.object({
+  "user": zod.union([zod.object({
+  "id": zod.number(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "role": zod.enum(['master', 'creator', 'viewer'])
+}),zod.null()])
+})
+
+
+/**
+ * @summary List all users (master only)
+ */
+export const ListUsersResponseItem = zod.object({
+  "id": zod.number(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "role": zod.enum(['master', 'creator', 'viewer'])
+})
+export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Create a user (master only)
+ */
+
+
+export const createUserBodyPasswordMin = 6;
+
+
+
+export const CreateUserBody = zod.object({
+  "username": zod.string().min(1),
+  "displayName": zod.string().min(1),
+  "password": zod.string().min(createUserBodyPasswordMin),
+  "role": zod.enum(['master', 'creator', 'viewer'])
+})
+
+export const CreateUserResponse = zod.object({
+  "id": zod.number(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "role": zod.enum(['master', 'creator', 'viewer'])
+})
+
+
+/**
+ * @summary Update a user's role, name, or password (master only)
+ */
+export const UpdateUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateUserBody = zod.object({
+  "displayName": zod.string().nullish(),
+  "password": zod.string().nullish(),
+  "role": zod.union([zod.enum(['master', 'creator', 'viewer']),zod.null()]).optional()
+})
+
+export const UpdateUserResponse = zod.object({
+  "id": zod.number(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "role": zod.enum(['master', 'creator', 'viewer'])
+})
+
+
+/**
+ * @summary Delete a user (master only)
+ */
+export const DeleteUserParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteUserResponse = zod.void()
+
+
+/**
+ * @summary Most-common segment values for a product model, learned from existing parts
+ */
+export const GetModelDefaultsQueryParams = zod.object({
+  "productModel": zod.coerce.string()
+})
+
+export const GetModelDefaultsResponse = zod.object({
+  "productModel": zod.string(),
+  "sampleSize": zod.number(),
+  "fields": zod.array(zod.object({
+  "field": zod.string(),
+  "label": zod.string(),
+  "code": zod.string(),
+  "description": zod.string(),
+  "share": zod.number(),
+  "count": zod.number()
+}))
+})
+
+
+/**
+ * @summary Self-learning model status — what the AI has learned from the registry so far
+ */
+export const GetLearningStatusResponse = zod.object({
+  "partsLearned": zod.number(),
+  "models": zod.number(),
+  "categories": zod.number(),
+  "conventions": zod.number(),
+  "segmentCoverage": zod.number(),
+  "lastLearnedAt": zod.string().nullable()
+})
+
+
+/**
+ * @summary Predict the most likely value for each unfilled segment, learned from matching parts
+ */
+export const PredictNextFieldsBody = zod.object({
+  "draft": zod.object({
+  "productCategory": zod.string().nullish(),
+  "productName": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "productModel": zod.string().nullish(),
+  "versionVariant": zod.string().nullish(),
+  "sizeVariant": zod.string().nullish(),
+  "powerType": zod.string().nullish(),
+  "maxPower": zod.string().nullish(),
+  "voltageRange": zod.string().nullish(),
+  "dimming": zod.string().nullish(),
+  "cct": zod.string().nullish(),
+  "lightDistribution": zod.string().nullish(),
+  "driver": zod.string().nullish(),
+  "finish": zod.string().nullish(),
+  "manufacturer": zod.string().nullish(),
+  "lensType": zod.string().nullish(),
+  "emergencyOption": zod.string().nullish(),
+  "sensorOption": zod.string().nullish(),
+  "surgeProtection": zod.string().nullish(),
+  "reflectorCover": zod.string().nullish(),
+  "mountingOption": zod.string().nullish(),
+  "photocontrolOption": zod.string().nullish(),
+  "connectableOption": zod.string().nullish(),
+  "base": zod.string().nullish()
+})
+})
+
+export const PredictNextFieldsResponse = zod.object({
+  "basisCount": zod.number(),
+  "filledCount": zod.number(),
+  "predictions": zod.array(zod.object({
+  "field": zod.string(),
+  "label": zod.string(),
+  "basisCount": zod.number(),
+  "candidates": zod.array(zod.object({
+  "code": zod.string(),
+  "description": zod.string(),
+  "confidence": zod.number(),
+  "count": zod.number()
+}))
+}))
+})
+
+
+/**
+ * @summary Data-driven insights and alerts for a given page scope
+ */
+export const GetAiInsightsQueryParams = zod.object({
+  "scope": zod.enum(['dashboard', 'builder', 'library', 'part', 'segments', 'global']),
+  "partId": zod.coerce.number().nullish()
+})
+
+export const GetAiInsightsResponse = zod.object({
+  "scope": zod.string(),
+  "aiConfigured": zod.boolean(),
+  "provider": zod.string(),
+  "narrative": zod.string().nullable(),
+  "insights": zod.array(zod.object({
+  "id": zod.string(),
+  "scope": zod.string(),
+  "severity": zod.enum(['info', 'suggestion', 'warning', 'critical']),
+  "title": zod.string(),
+  "message": zod.string(),
+  "actionLabel": zod.string().nullable(),
+  "actionHref": zod.string().nullable(),
+  "field": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Ask the data-aware AI assistant about the portal and registry
+ */
+
+
+
+export const AskAiAssistantBody = zod.object({
+  "message": zod.string().min(1),
+  "scope": zod.union([zod.string(),zod.null()]).optional(),
+  "history": zod.array(zod.object({
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string()
+})).optional()
+})
+
+export const AskAiAssistantResponse = zod.object({
+  "reply": zod.string(),
+  "suggestions": zod.array(zod.string()),
+  "aiConfigured": zod.boolean()
+})
+
+
+/**
+ * @summary Explain a part number segment-by-segment in plain English
+ */
+export const ExplainPartNumberBody = zod.object({
+  "partId": zod.number().nullish(),
+  "partNumber": zod.string().nullish()
+})
+
+export const ExplainPartNumberResponse = zod.object({
+  "partNumber": zod.string(),
+  "summary": zod.string(),
+  "aiConfigured": zod.boolean(),
+  "segments": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "code": zod.string(),
+  "meaning": zod.string()
+}))
+})
+
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -183,6 +443,75 @@ export const DecodePartNumberResponse = zod.object({
   "base": zod.string().nullish()
 }),
   "errors": zod.array(zod.string()).optional()
+})
+
+
+/**
+ * @summary Validate a builder draft, detect duplicates, and suggest next values
+ */
+export const ValidateBuilderPartNumberBody = zod.object({
+  "draft": zod.object({
+  "productCategory": zod.string().nullish(),
+  "productName": zod.string().nullish(),
+  "company": zod.string().nullish(),
+  "productModel": zod.string().nullish(),
+  "versionVariant": zod.string().nullish(),
+  "sizeVariant": zod.string().nullish(),
+  "powerType": zod.string().nullish(),
+  "maxPower": zod.string().nullish(),
+  "voltageRange": zod.string().nullish(),
+  "dimming": zod.string().nullish(),
+  "cct": zod.string().nullish(),
+  "lightDistribution": zod.string().nullish(),
+  "driver": zod.string().nullish(),
+  "finish": zod.string().nullish(),
+  "manufacturer": zod.string().nullish(),
+  "lensType": zod.string().nullish(),
+  "emergencyOption": zod.string().nullish(),
+  "sensorOption": zod.string().nullish(),
+  "surgeProtection": zod.string().nullish(),
+  "reflectorCover": zod.string().nullish(),
+  "mountingOption": zod.string().nullish(),
+  "photocontrolOption": zod.string().nullish(),
+  "connectableOption": zod.string().nullish(),
+  "base": zod.string().nullish()
+}),
+  "ignoreId": zod.number().nullish()
+})
+
+export const ValidateBuilderPartNumberResponse = zod.object({
+  "assembledPartNumber": zod.string().nullable(),
+  "isReadyToCreate": zod.boolean(),
+  "missingRequiredFields": zod.array(zod.string()),
+  "fieldIssues": zod.array(zod.object({
+  "field": zod.string(),
+  "message": zod.string(),
+  "severity": zod.enum(['error', 'warning'])
+})),
+  "duplicateMatch": zod.union([zod.object({
+  "id": zod.number(),
+  "partNumber": zod.string(),
+  "productName": zod.string(),
+  "productCategory": zod.string(),
+  "status": zod.enum(['draft', 'active', 'deprecated']),
+  "similarityScore": zod.number()
+}),zod.null()]).optional(),
+  "similarMatches": zod.array(zod.object({
+  "id": zod.number(),
+  "partNumber": zod.string(),
+  "productName": zod.string(),
+  "productCategory": zod.string(),
+  "status": zod.enum(['draft', 'active', 'deprecated']),
+  "similarityScore": zod.number()
+})),
+  "nextSuggestions": zod.array(zod.object({
+  "field": zod.string(),
+  "label": zod.string(),
+  "values": zod.array(zod.object({
+  "code": zod.string(),
+  "description": zod.string()
+}))
+}))
 })
 
 

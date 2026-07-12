@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.turbo
+.git
+.gitignore
+**/*.log
+**/.env
+**/.env.local
+.local
+attached_assets
+**/tsconfig.tsbuildinfo
+Dockerfile
+docker-compose.yml
+DEPLOY.md
+replit.md

@@ -1,11 +1,11 @@
-import { pgTable, serial, text, integer, boolean, timestamp, jsonb, unique } from "drizzle-orm/pg-core";
+import { mysqlTable, text, int, boolean, timestamp, json, unique } from "drizzle-orm/mysql-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 // ─── Part Numbers ────────────────────────────────────────────────────────────
 
-export const partNumbersTable = pgTable("part_numbers", {
-  id: serial("id").primaryKey(),
+export const partNumbersTable = mysqlTable("part_numbers", {
+  id: int("id").autoincrement().primaryKey(),
 
   // Generated composite part number (computed from segments)
   partNumber: text("part_number").notNull().unique(),
@@ -47,7 +47,7 @@ export const partNumbersTable = pgTable("part_numbers", {
   status: text("status").notNull().default("draft"), // draft | active | deprecated
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });
 
 export const insertPartNumberSchema = createInsertSchema(partNumbersTable).omit({
@@ -61,13 +61,13 @@ export type PartNumber = typeof partNumbersTable.$inferSelect;
 
 // ─── Segment Values ───────────────────────────────────────────────────────────
 
-export const segmentValuesTable = pgTable("segment_values", {
-  id: serial("id").primaryKey(),
+export const segmentValuesTable = mysqlTable("segment_values", {
+  id: int("id").autoincrement().primaryKey(),
   segmentKey: text("segment_key").notNull(),   // e.g. "productModel", "cct"
   code: text("code").notNull(),                // e.g. "UHB", "40K"
   description: text("description").notNull(),  // e.g. "UFO High Bay"
-  applicableProducts: jsonb("applicable_products").$type<string[]>().default([]),
-  sortOrder: integer("sort_order").notNull().default(0),
+  applicableProducts: json("applicable_products").$type<string[]>().notNull(),
+  sortOrder: int("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
 }, (table) => [
   unique("segment_values_key_code_unique").on(table.segmentKey, table.code),

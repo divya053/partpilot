@@ -8,6 +8,10 @@ import { Plus, Edit2, Trash2, Code2, Tag, Search, ToggleLeft } from "lucide-reac
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { AiInsights } from "@/components/ai/ai-insights";
+import { useAuth } from "@/lib/auth";
+import { invalidateAi } from "@/lib/ai-refresh";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Segments() {
@@ -26,6 +30,14 @@ export default function Segments() {
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Segment Configuration</h1>
           <p className="text-muted-foreground mt-1">Manage the allowed codes and definitions for part number generation.</p>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <AiInsights
+          scope="segments"
+          title="Segment Intelligence"
+          description="Which codes are used, unused, or missing — learned from real parts."
+        />
       </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden shadow-sm border-border">
@@ -63,6 +75,9 @@ export default function Segments() {
 
 function SegmentItem({ segment, onUpdate }: { segment: any, onUpdate: () => void }) {
   const { toast } = useToast();
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
+  const canManage = can("manageSegments");
   const { mutateAsync: addValue } = useAddSegmentValue();
   const { mutateAsync: updateValue } = useUpdateSegmentValue();
   const { mutateAsync: deleteValue } = useDeleteSegmentValue();
@@ -82,6 +97,7 @@ function SegmentItem({ segment, onUpdate }: { segment: any, onUpdate: () => void
       setIsAddOpen(false);
       setNewCode("");
       setNewDesc("");
+      invalidateAi(queryClient);
       onUpdate();
     } catch(err) {
       toast({ title: "Error", description: "Failed to add value.", variant: "destructive" });
@@ -91,6 +107,7 @@ function SegmentItem({ segment, onUpdate }: { segment: any, onUpdate: () => void
   const handleToggleActive = async (code: string, isActive: boolean) => {
     try {
       await updateValue({ key: segment.key, code, data: { isActive } });
+      invalidateAi(queryClient);
       onUpdate();
     } catch(err) {
       toast({ title: "Error", description: "Failed to update status.", variant: "destructive" });
@@ -101,6 +118,7 @@ function SegmentItem({ segment, onUpdate }: { segment: any, onUpdate: () => void
     try {
       await deleteValue({ key: segment.key, code });
       toast({ title: "Deleted", description: `Removed ${code}.` });
+      invalidateAi(queryClient);
       onUpdate();
     } catch(err) {
       toast({ title: "Error", description: "Failed to delete.", variant: "destructive" });
@@ -151,22 +169,25 @@ function SegmentItem({ segment, onUpdate }: { segment: any, onUpdate: () => void
                       <td className="px-4 py-2 font-mono font-bold text-primary">{val.code}</td>
                       <td className="px-4 py-2 text-foreground font-medium">{val.description}</td>
                       <td className="px-4 py-2 text-center">
-                        <Switch 
-                          checked={val.isActive} 
+                        <Switch
+                          checked={val.isActive}
+                          disabled={!canManage}
                           onCheckedChange={(checked) => handleToggleActive(val.code, checked)}
                         />
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(val.code)}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {canManage ? (
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(val.code)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        ) : null}
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
-            <div className="p-3 bg-muted/10 border-t border-border flex justify-end">
+            <div className={`p-3 bg-muted/10 border-t border-border flex justify-end ${canManage ? "" : "hidden"}`}>
               <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/90">

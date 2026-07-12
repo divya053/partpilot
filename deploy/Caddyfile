@@ -1,0 +1,20 @@
+# PartPilot reverse proxy + static host.
+# SITE_ADDRESS controls the public address:
+#   - a domain (e.g. partpilot.example.com) → Caddy auto-provisions HTTPS
+#   - ":80" (default) → plain HTTP, good for testing by IP before DNS is set
+{$SITE_ADDRESS::80} {
+	encode gzip zstd
+
+	# API requests go to the Node service.
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:3001
+	}
+
+	# Everything else is the single-page app.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

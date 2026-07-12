@@ -13,6 +13,295 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface OkResponse {
+  ok: boolean;
+}
+
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  master: 'master',
+  creator: 'creator',
+  viewer: 'viewer',
+} as const;
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  displayName: string;
+  role: Role;
+}
+
+export interface AuthMeResponse {
+  user: AuthUser | null;
+}
+
+export interface LoginInput {
+  /** @minLength 1 */
+  username: string;
+  /** @minLength 1 */
+  password: string;
+}
+
+export interface CreateUserInput {
+  /** @minLength 1 */
+  username: string;
+  /** @minLength 1 */
+  displayName: string;
+  /** @minLength 6 */
+  password: string;
+  role: Role;
+}
+
+export interface UpdateUserInput {
+  /** @nullable */
+  displayName?: string | null;
+  /** @nullable */
+  password?: string | null;
+  role?: Role | null;
+}
+
+export interface AiBuilderDraft {
+  /** @nullable */
+  productCategory?: string | null;
+  /** @nullable */
+  productName?: string | null;
+  /** @nullable */
+  company?: string | null;
+  /** @nullable */
+  productModel?: string | null;
+  /** @nullable */
+  versionVariant?: string | null;
+  /** @nullable */
+  sizeVariant?: string | null;
+  /** @nullable */
+  powerType?: string | null;
+  /** @nullable */
+  maxPower?: string | null;
+  /** @nullable */
+  voltageRange?: string | null;
+  /** @nullable */
+  dimming?: string | null;
+  /** @nullable */
+  cct?: string | null;
+  /** @nullable */
+  lightDistribution?: string | null;
+  /** @nullable */
+  driver?: string | null;
+  /** @nullable */
+  finish?: string | null;
+  /** @nullable */
+  manufacturer?: string | null;
+  /** @nullable */
+  lensType?: string | null;
+  /** @nullable */
+  emergencyOption?: string | null;
+  /** @nullable */
+  sensorOption?: string | null;
+  /** @nullable */
+  surgeProtection?: string | null;
+  /** @nullable */
+  reflectorCover?: string | null;
+  /** @nullable */
+  mountingOption?: string | null;
+  /** @nullable */
+  photocontrolOption?: string | null;
+  /** @nullable */
+  connectableOption?: string | null;
+  /** @nullable */
+  base?: string | null;
+}
+
+export interface AiModelDefaultField {
+  field: string;
+  label: string;
+  code: string;
+  description: string;
+  share: number;
+  count: number;
+}
+
+export interface AiModelDefaults {
+  productModel: string;
+  sampleSize: number;
+  fields: AiModelDefaultField[];
+}
+
+export interface AiLearningStatus {
+  partsLearned: number;
+  models: number;
+  categories: number;
+  conventions: number;
+  segmentCoverage: number;
+  /** @nullable */
+  lastLearnedAt: string | null;
+}
+
+export interface AiPredictInput {
+  draft: AiBuilderDraft;
+}
+
+export interface AiPrediction {
+  code: string;
+  description: string;
+  confidence: number;
+  count: number;
+}
+
+export interface AiFieldPrediction {
+  field: string;
+  label: string;
+  basisCount: number;
+  candidates: AiPrediction[];
+}
+
+export interface AiPredictResponse {
+  basisCount: number;
+  filledCount: number;
+  predictions: AiFieldPrediction[];
+}
+
+export type AiInsightSeverity = typeof AiInsightSeverity[keyof typeof AiInsightSeverity];
+
+
+export const AiInsightSeverity = {
+  info: 'info',
+  suggestion: 'suggestion',
+  warning: 'warning',
+  critical: 'critical',
+} as const;
+
+export interface AiInsight {
+  id: string;
+  scope: string;
+  severity: AiInsightSeverity;
+  title: string;
+  message: string;
+  /** @nullable */
+  actionLabel: string | null;
+  /** @nullable */
+  actionHref: string | null;
+  /** @nullable */
+  field: string | null;
+}
+
+export interface AiInsightsResponse {
+  scope: string;
+  aiConfigured: boolean;
+  provider: string;
+  /** @nullable */
+  narrative: string | null;
+  insights: AiInsight[];
+}
+
+export type AiChatMessageRole = typeof AiChatMessageRole[keyof typeof AiChatMessageRole];
+
+
+export const AiChatMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface AiChatMessage {
+  role: AiChatMessageRole;
+  content: string;
+}
+
+export interface AiAssistantInput {
+  /** @minLength 1 */
+  message: string;
+  scope?: string | null;
+  history?: AiChatMessage[];
+}
+
+export interface AiAssistantResponse {
+  reply: string;
+  suggestions: string[];
+  aiConfigured: boolean;
+}
+
+export interface AiExplainInput {
+  /** @nullable */
+  partId?: number | null;
+  /** @nullable */
+  partNumber?: string | null;
+}
+
+export interface AiSegmentExplanation {
+  key: string;
+  label: string;
+  code: string;
+  meaning: string;
+}
+
+export interface AiExplainResponse {
+  partNumber: string;
+  summary: string;
+  aiConfigured: boolean;
+  segments: AiSegmentExplanation[];
+}
+
+export type ValidationFieldIssueSeverity = typeof ValidationFieldIssueSeverity[keyof typeof ValidationFieldIssueSeverity];
+
+
+export const ValidationFieldIssueSeverity = {
+  error: 'error',
+  warning: 'warning',
+} as const;
+
+export interface ValidationFieldIssue {
+  field: string;
+  message: string;
+  severity: ValidationFieldIssueSeverity;
+}
+
+export interface SuggestedSegmentValue {
+  code: string;
+  description: string;
+}
+
+export interface BuilderNextSuggestion {
+  field: string;
+  label: string;
+  values: SuggestedSegmentValue[];
+}
+
+export type BuilderMatchCandidateStatus = typeof BuilderMatchCandidateStatus[keyof typeof BuilderMatchCandidateStatus];
+
+
+export const BuilderMatchCandidateStatus = {
+  draft: 'draft',
+  active: 'active',
+  deprecated: 'deprecated',
+} as const;
+
+export interface BuilderMatchCandidate {
+  id: number;
+  partNumber: string;
+  productName: string;
+  productCategory: string;
+  status: BuilderMatchCandidateStatus;
+  similarityScore: number;
+}
+
+export interface BuilderValidationInput {
+  draft: AiBuilderDraft;
+  /** @nullable */
+  ignoreId?: number | null;
+}
+
+export interface BuilderValidationResult {
+  /** @nullable */
+  assembledPartNumber: string | null;
+  isReadyToCreate: boolean;
+  missingRequiredFields: string[];
+  fieldIssues: ValidationFieldIssue[];
+  duplicateMatch?: BuilderMatchCandidate | null;
+  similarMatches: BuilderMatchCandidate[];
+  nextSuggestions: BuilderNextSuggestion[];
+}
+
 export type PartNumberStatus = typeof PartNumberStatus[keyof typeof PartNumberStatus];
 
 
@@ -305,6 +594,30 @@ export interface ImportResult {
   skipped: number;
   errors: ImportResultErrorsItem[];
 }
+
+export type GetModelDefaultsParams = {
+productModel: string;
+};
+
+export type GetAiInsightsParams = {
+scope: GetAiInsightsScope;
+/**
+ * @nullable
+ */
+partId?: number | null;
+};
+
+export type GetAiInsightsScope = typeof GetAiInsightsScope[keyof typeof GetAiInsightsScope];
+
+
+export const GetAiInsightsScope = {
+  dashboard: 'dashboard',
+  builder: 'builder',
+  library: 'library',
+  part: 'part',
+  segments: 'segments',
+  global: 'global',
+} as const;
 
 export type ListPartNumbersParams = {
 page?: number;

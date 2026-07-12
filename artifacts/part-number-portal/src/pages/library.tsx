@@ -5,9 +5,12 @@ import { Search, Filter, Plus, ChevronRight, SlidersHorizontal, Download } from 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AiInsights } from "@/components/ai/ai-insights";
+import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 
 export default function Library() {
+  const { can } = useAuth();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ListPartNumbersStatus | "all">("all");
   const [category, setCategory] = useState<string>("all");
@@ -32,12 +35,22 @@ export default function Library() {
           <Button variant="outline" className="gap-2 font-medium">
             <Download className="w-4 h-4" /> Export CSV
           </Button>
-          <Link href="/builder">
-            <Button className="gap-2 font-medium">
-              <Plus className="w-4 h-4" /> New Part
-            </Button>
-          </Link>
+          {can("create") ? (
+            <Link href="/builder">
+              <Button className="gap-2 font-medium">
+                <Plus className="w-4 h-4" /> New Part
+              </Button>
+            </Link>
+          ) : null}
         </div>
+      </div>
+
+      <div className="mb-6">
+        <AiInsights
+          scope="library"
+          title="Registry Health"
+          description="Data-quality checks across every part number."
+        />
       </div>
 
       <div className="bg-card border border-border shadow-sm rounded-xl flex-1 flex flex-col overflow-hidden">

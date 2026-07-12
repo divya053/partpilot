@@ -1,0 +1,65 @@
+# PartPilot — "behind a reverse proxy" deployment (e.g. CloudPanel / Hostinger).
+#
+# Use this instead of docker-compose.yml when the VPS already runs a web server
+# (CloudPanel, nginx, Apache…) on ports 80/443. PartPilot brings its OWN MySQL,
+# so you do NOT need to create a database in CloudPanel. The web container binds
+# only to localhost:8080; you point a CloudPanel "Reverse Proxy" site at it and
+# let CloudPanel handle the domain + HTTPS.
+#
+#   cp deploy/.env.example .env      # set MYSQL_ROOT_PASSWORD, SESSION_SECRET, GROQ_API_KEY
+#   docker compose -f docker-compose.proxied.yml up -d --build
+#
+# Then in CloudPanel: Add Site → Reverse Proxy → http://127.0.0.1:8080
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-partpilot}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "3001"
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/${MYSQL_DATABASE:-partpilot}
+      SESSION_SECRET: ${SESSION_SECRET}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    expose:
+      - "3001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # Plain HTTP inside; TLS is terminated by CloudPanel.
+      SITE_ADDRESS: ":80"
+    # Bind to localhost only — CloudPanel's reverse proxy reaches it here.
+    ports:
+      - "127.0.0.1:8080:80"
+
+volumes:
+  db_data:

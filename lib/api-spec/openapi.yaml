@@ -18,8 +18,312 @@ tags:
     description: Dashboard statistics
   - name: import
     description: Bulk import operations
+  - name: ai
+    description: AI-assisted builder operations
+  - name: auth
+    description: Authentication and user management
 
 paths:
+  /auth/login:
+    post:
+      operationId: loginUser
+      tags: [auth]
+      summary: Log in with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logoutUser
+      tags: [auth]
+      summary: Log out the current user
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Get the currently authenticated user (null if not logged in)
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthMeResponse"
+
+  /auth/users:
+    get:
+      operationId: listUsers
+      tags: [auth]
+      summary: List all users (master only)
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuthUser"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createUser
+      tags: [auth]
+      summary: Create a user (master only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserInput"
+      responses:
+        "201":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Username already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/users/{id}:
+    patch:
+      operationId: updateUser
+      tags: [auth]
+      summary: Update a user's role, name, or password (master only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserInput"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteUser
+      tags: [auth]
+      summary: Delete a user (master only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /ai/model-defaults:
+    get:
+      operationId: getModelDefaults
+      tags: [ai]
+      summary: Most-common segment values for a product model, learned from existing parts
+      parameters:
+        - name: productModel
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deterministic field defaults derived from the registry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModelDefaults"
+
+  /ai/learning-status:
+    get:
+      operationId: getLearningStatus
+      tags: [ai]
+      summary: Self-learning model status — what the AI has learned from the registry so far
+      responses:
+        "200":
+          description: Learning status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiLearningStatus"
+
+  /ai/predict-next:
+    post:
+      operationId: predictNextFields
+      tags: [ai]
+      summary: Predict the most likely value for each unfilled segment, learned from matching parts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiPredictInput"
+      responses:
+        "200":
+          description: Per-field predictions conditioned on the current draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiPredictResponse"
+
+  /ai/insights:
+    get:
+      operationId: getAiInsights
+      tags: [ai]
+      summary: Data-driven insights and alerts for a given page scope
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [dashboard, builder, library, part, segments, global]
+        - name: partId
+          in: query
+          required: false
+          schema:
+            type: ["integer", "null"]
+      responses:
+        "200":
+          description: Insights and optional AI narrative for the requested scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiInsightsResponse"
+
+  /ai/assistant:
+    post:
+      operationId: askAiAssistant
+      tags: [ai]
+      summary: Ask the data-aware AI assistant about the portal and registry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiAssistantInput"
+      responses:
+        "200":
+          description: Assistant reply grounded in live registry data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAssistantResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /ai/explain:
+    post:
+      operationId: explainPartNumber
+      tags: [ai]
+      summary: Explain a part number segment-by-segment in plain English
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiExplainInput"
+      responses:
+        "200":
+          description: Human-readable breakdown of the part number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiExplainResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Part number not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /healthz:
     get:
       operationId: healthCheck
@@ -123,6 +427,31 @@ paths:
                 $ref: "#/components/schemas/DecodedPartNumber"
         "400":
           description: Invalid part number format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /part-numbers/validate-builder:
+    post:
+      operationId: validateBuilderPartNumber
+      tags: [part-numbers]
+      summary: Validate a builder draft, detect duplicates, and suggest next values
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BuilderValidationInput"
+      responses:
+        "200":
+          description: Validation analysis for the current builder draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BuilderValidationResult"
+        "400":
+          description: Validation error
           content:
             application/json:
               schema:
@@ -447,6 +776,544 @@ components:
           type: string
       required:
         - error
+
+    OkResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+
+    Role:
+      type: string
+      enum: [master, creator, viewer]
+
+    AuthUser:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - username
+        - displayName
+        - role
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        displayName:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+
+    AuthMeResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - user
+      properties:
+        user:
+          anyOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+
+    LoginInput:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+
+    CreateUserInput:
+      type: object
+      additionalProperties: false
+      required:
+        - username
+        - displayName
+        - password
+        - role
+      properties:
+        username:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 6
+        role:
+          $ref: "#/components/schemas/Role"
+
+    UpdateUserInput:
+      type: object
+      additionalProperties: false
+      properties:
+        displayName:
+          type: ["string", "null"]
+        password:
+          type: ["string", "null"]
+        role:
+          anyOf:
+            - $ref: "#/components/schemas/Role"
+            - type: "null"
+
+    AiBuilderDraft:
+      type: object
+      additionalProperties: false
+      properties:
+        productCategory:
+          type: ["string", "null"]
+        productName:
+          type: ["string", "null"]
+        company:
+          type: ["string", "null"]
+        productModel:
+          type: ["string", "null"]
+        versionVariant:
+          type: ["string", "null"]
+        sizeVariant:
+          type: ["string", "null"]
+        powerType:
+          type: ["string", "null"]
+        maxPower:
+          type: ["string", "null"]
+        voltageRange:
+          type: ["string", "null"]
+        dimming:
+          type: ["string", "null"]
+        cct:
+          type: ["string", "null"]
+        lightDistribution:
+          type: ["string", "null"]
+        driver:
+          type: ["string", "null"]
+        finish:
+          type: ["string", "null"]
+        manufacturer:
+          type: ["string", "null"]
+        lensType:
+          type: ["string", "null"]
+        emergencyOption:
+          type: ["string", "null"]
+        sensorOption:
+          type: ["string", "null"]
+        surgeProtection:
+          type: ["string", "null"]
+        reflectorCover:
+          type: ["string", "null"]
+        mountingOption:
+          type: ["string", "null"]
+        photocontrolOption:
+          type: ["string", "null"]
+        connectableOption:
+          type: ["string", "null"]
+        base:
+          type: ["string", "null"]
+
+    AiModelDefaultField:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - label
+        - code
+        - description
+        - share
+        - count
+      properties:
+        field:
+          type: string
+        label:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        share:
+          type: integer
+        count:
+          type: integer
+
+    AiModelDefaults:
+      type: object
+      additionalProperties: false
+      required:
+        - productModel
+        - sampleSize
+        - fields
+      properties:
+        productModel:
+          type: string
+        sampleSize:
+          type: integer
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiModelDefaultField"
+
+    AiLearningStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - partsLearned
+        - models
+        - categories
+        - conventions
+        - segmentCoverage
+        - lastLearnedAt
+      properties:
+        partsLearned:
+          type: integer
+        models:
+          type: integer
+        categories:
+          type: integer
+        conventions:
+          type: integer
+        segmentCoverage:
+          type: integer
+        lastLearnedAt:
+          type: ["string", "null"]
+
+    AiPredictInput:
+      type: object
+      additionalProperties: false
+      required:
+        - draft
+      properties:
+        draft:
+          $ref: "#/components/schemas/AiBuilderDraft"
+
+    AiPrediction:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - description
+        - confidence
+        - count
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+        confidence:
+          type: integer
+        count:
+          type: integer
+
+    AiFieldPrediction:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - label
+        - basisCount
+        - candidates
+      properties:
+        field:
+          type: string
+        label:
+          type: string
+        basisCount:
+          type: integer
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiPrediction"
+
+    AiPredictResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - basisCount
+        - filledCount
+        - predictions
+      properties:
+        basisCount:
+          type: integer
+        filledCount:
+          type: integer
+        predictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiFieldPrediction"
+
+    AiInsight:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - scope
+        - severity
+        - title
+        - message
+        - actionLabel
+        - actionHref
+        - field
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+        severity:
+          type: string
+          enum: [info, suggestion, warning, critical]
+        title:
+          type: string
+        message:
+          type: string
+        actionLabel:
+          type: ["string", "null"]
+        actionHref:
+          type: ["string", "null"]
+        field:
+          type: ["string", "null"]
+
+    AiInsightsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - scope
+        - aiConfigured
+        - provider
+        - narrative
+        - insights
+      properties:
+        scope:
+          type: string
+        aiConfigured:
+          type: boolean
+        provider:
+          type: string
+        narrative:
+          type: ["string", "null"]
+        insights:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiInsight"
+
+    AiChatMessage:
+      type: object
+      additionalProperties: false
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+
+    AiAssistantInput:
+      type: object
+      additionalProperties: false
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          minLength: 1
+        scope:
+          anyOf:
+            - type: string
+            - type: "null"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiChatMessage"
+
+    AiAssistantResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - reply
+        - suggestions
+        - aiConfigured
+      properties:
+        reply:
+          type: string
+        suggestions:
+          type: array
+          items:
+            type: string
+        aiConfigured:
+          type: boolean
+
+    AiExplainInput:
+      type: object
+      additionalProperties: false
+      properties:
+        partId:
+          type: ["integer", "null"]
+        partNumber:
+          type: ["string", "null"]
+
+    AiSegmentExplanation:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - label
+        - code
+        - meaning
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        code:
+          type: string
+        meaning:
+          type: string
+
+    AiExplainResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - partNumber
+        - summary
+        - aiConfigured
+        - segments
+      properties:
+        partNumber:
+          type: string
+        summary:
+          type: string
+        aiConfigured:
+          type: boolean
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiSegmentExplanation"
+
+    ValidationFieldIssue:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - message
+        - severity
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+          enum: [error, warning]
+
+    SuggestedSegmentValue:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - description
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+
+    BuilderNextSuggestion:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - label
+        - values
+      properties:
+        field:
+          type: string
+        label:
+          type: string
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/SuggestedSegmentValue"
+
+    BuilderMatchCandidate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - partNumber
+        - productName
+        - productCategory
+        - status
+        - similarityScore
+      properties:
+        id:
+          type: integer
+        partNumber:
+          type: string
+        productName:
+          type: string
+        productCategory:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, deprecated]
+        similarityScore:
+          type: integer
+
+    BuilderValidationInput:
+      type: object
+      additionalProperties: false
+      required:
+        - draft
+      properties:
+        draft:
+          $ref: "#/components/schemas/AiBuilderDraft"
+        ignoreId:
+          type: ["integer", "null"]
+
+    BuilderValidationResult:
+      type: object
+      additionalProperties: false
+      required:
+        - assembledPartNumber
+        - isReadyToCreate
+        - missingRequiredFields
+        - fieldIssues
+        - nextSuggestions
+        - similarMatches
+      properties:
+        assembledPartNumber:
+          type: ["string", "null"]
+        isReadyToCreate:
+          type: boolean
+        missingRequiredFields:
+          type: array
+          items:
+            type: string
+        fieldIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationFieldIssue"
+        duplicateMatch:
+          anyOf:
+            - $ref: "#/components/schemas/BuilderMatchCandidate"
+            - type: "null"
+        similarMatches:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderMatchCandidate"
+        nextSuggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuilderNextSuggestion"
 
     PartNumber:
       type: object

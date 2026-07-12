@@ -9,8 +9,17 @@ import {
   UpdateSegmentValueBody,
   DeleteSegmentValueParams,
 } from "@workspace/api-zod";
+import { parseApplicableProducts } from "../lib/partNumberBuilder";
+import type { SegmentValueRow } from "../lib/partNumberBuilder";
+import { requireCap } from "../lib/auth";
 
 const router = Router();
+
+// `applicable_products` lives in a longtext column, so mysql2 returns it as a raw
+// JSON string. Coerce it to the string[] the API contract promises before serializing.
+function serializeSegmentValue(value: SegmentValueRow): SegmentValueRow {
+  return { ...value, applicableProducts: parseApplicableProducts(value.applicableProducts) };
+}
 
 const VALID_SEGMENT_KEYS = new Set([
   "company","productModel","versionVariant","sizeVariant","powerType","maxPower",
@@ -54,7 +63,7 @@ router.get("/", async (_req, res) => {
 
   const result = SEGMENT_DEFINITIONS.map((def) => ({
     ...def,
-    values: values.filter((v) => v.segmentKey === def.key),
+    values: values.filter((v) => v.segmentKey === def.key).map(serializeSegmentValue),
   }));
 
   res.json(result);
@@ -76,12 +85,12 @@ router.get("/:key", async (req, res) => {
   const values = await db.select().from(segmentValuesTable)
     .where(eq(segmentValuesTable.segmentKey, parsed.data.key))
     .orderBy(asc(segmentValuesTable.sortOrder));
-  res.json({ ...def, values });
+  res.json({ ...def, values: values.map(serializeSegmentValue) });
 });
 
 // ─── ADD VALUE ────────────────────────────────────────────────────────────────
 
-router.post("/:key/values", async (req, res) => {
+router.post("/:key/values", requireCap("manageSegments"), async (req, res) => {
   const paramsParsed = AddSegmentValueParams.safeParse({ key: req.params.key });
   if (!paramsParsed.success) {
     res.status(400).json({ error: "Invalid key" });
@@ -109,15 +118,17 @@ router.post("/:key/values", async (req, res) => {
     return;
   }
 
-  const [created] = await db.insert(segmentValuesTable)
+  const [{ id }] = await db.insert(segmentValuesTable)
     .values({ segmentKey: key, code, description, applicableProducts: applicableProducts ?? [], sortOrder: sortOrder ?? 0 })
-    .returning();
-  res.status(201).json(created);
+    .$returningId();
+  const [created] = await db.select().from(segmentValuesTable)
+    .where(eq(segmentValuesTable.id, id));
+  res.status(201).json(serializeSegmentValue(created));
 });
 
 // ─── UPDATE VALUE ─────────────────────────────────────────────────────────────
 
-router.patch("/:key/values/:code", async (req, res) => {
+router.patch("/:key/values/:code", requireCap("manageSegments"), async (req, res) => {
   const paramsParsed = UpdateSegmentValueParams.safeParse({ key: req.params.key, code: req.params.code });
   if (!paramsParsed.success) {
     res.status(400).json({ error: "Invalid params" });
@@ -139,16 +150,18 @@ router.patch("/:key/values/:code", async (req, res) => {
     return;
   }
 
-  const [updated] = await db.update(segmentValuesTable)
+  await db.update(segmentValuesTable)
     .set(bodyParsed.data)
     .where(eq(segmentValuesTable.id, row.id))
-    .returning();
-  res.json(updated);
+    .execute();
+  const [updated] = await db.select().from(segmentValuesTable)
+    .where(eq(segmentValuesTable.id, row.id));
+  res.json(serializeSegmentValue(updated));
 });
 
 // ─── DELETE VALUE ─────────────────────────────────────────────────────────────
 
-router.delete("/:key/values/:code", async (req, res) => {
+router.delete("/:key/values/:code", requireCap("manageSegments"), async (req, res) => {
   const parsed = DeleteSegmentValueParams.safeParse({ key: req.params.key, code: req.params.code });
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid params" });

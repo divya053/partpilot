@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, partNumbersTable, segmentValuesTable } from "@workspace/db";
-import { eq, ilike, or, and, desc, sql, count } from "drizzle-orm";
+import { eq, or, and, desc, sql, count, type SQLWrapper } from "drizzle-orm";
 import {
   ListPartNumbersQueryParams,
   CreatePartNumberBody,
@@ -10,67 +10,29 @@ import {
   DeletePartNumberParams,
   DuplicatePartNumberParams,
   DecodePartNumberBody,
+  ValidateBuilderPartNumberBody,
 } from "@workspace/api-zod";
+import {
+  buildPartNumber,
+  canAssemblePartNumber,
+  createSegmentIndex,
+  normalizeDraftValue,
+  REQUIRED_CORE_FIELDS,
+  scoreSimilarity,
+  SEGMENT_FIELD_LABELS,
+  type BuilderDraft,
+  type BuilderField,
+  type SegmentKey,
+} from "../lib/partNumberBuilder";
+import { requireCap } from "../lib/auth";
 
 const router = Router();
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function buildPartNumber(fields: {
-  company: string;
-  productModel: string;
-  versionVariant: string;
-  sizeVariant: string;
-  powerType: string;
-  maxPower: string;
-  voltageRange: string;
-  dimming: string;
-  cct: string;
-  lightDistribution: string;
-  driver: string;
-  finish: string;
-  manufacturer: string;
-  lensType?: string | null;
-  emergencyOption?: string | null;
-  sensorOption?: string | null;
-  surgeProtection?: string | null;
-  reflectorCover?: string | null;
-  mountingOption?: string | null;
-  photocontrolOption?: string | null;
-  connectableOption?: string | null;
-  base?: string | null;
-}): string {
-  const core = [
-    fields.company,
-    `${fields.productModel}${fields.versionVariant}`,
-    fields.sizeVariant,
-    `${fields.powerType}${fields.maxPower}`,
-    fields.voltageRange,
-    fields.dimming,
-    fields.cct,
-    fields.lightDistribution,
-    fields.driver,
-    fields.finish,
-    fields.manufacturer,
-  ].join("-");
-
-  const opts = [
-    fields.lensType,
-    fields.emergencyOption,
-    fields.sensorOption,
-    fields.surgeProtection,
-    fields.reflectorCover,
-    fields.mountingOption,
-    fields.photocontrolOption,
-    fields.connectableOption,
-    fields.base,
-  ].filter(Boolean) as string[];
-
-  return opts.length > 0 ? `${core}-${opts.join("-")}` : core;
+function containsInsensitive(column: SQLWrapper, value: string) {
+  return sql`lower(${column}) like ${`%${value.toLowerCase()}%`}`;
 }
 
 function decodePartNumber(raw: string) {
-  // Format: IK-{Model}{Version}-{Size}-{PowerType}{Power}-{Voltage}-{Dimming}-{CCT}-{LightDist}-{Driver}-{Finish}-{Manufacturer}[-opts...]
   const segments = raw.split("-");
   const errors: string[] = [];
   const result: Record<string, string | null> = {
@@ -99,14 +61,17 @@ function decodePartNumber(raw: string) {
   };
 
   if (segments.length < 11) {
-    return { valid: false, segments: result, errors: ["Part number has too few segments — expected at least 11 dash-separated fields"], parseFailure: true };
+    return {
+      valid: false,
+      segments: result,
+      errors: ["Part number has too few segments - expected at least 11 dash-separated fields"],
+      parseFailure: true,
+    };
   }
 
-  // Segment 0: Company
   result.company = segments[0];
   if (result.company !== "IK") errors.push(`Unexpected company code: ${result.company}`);
 
-  // Segment 1: ProductModel + Version combined (e.g. UHB3, T8G0B)
   const modelVersion = segments[1];
   const modelMatch = modelVersion.match(/^([A-Z]+)(.+)$/);
   if (modelMatch) {
@@ -116,10 +81,8 @@ function decodePartNumber(raw: string) {
     errors.push(`Cannot parse model/version from: ${modelVersion}`);
   }
 
-  // Segment 2: Size Variant
   result.sizeVariant = segments[2];
 
-  // Segment 3: PowerType + Power (e.g. S0240, F0015)
   const powerSeg = segments[3];
   if (powerSeg && /^[FS]/.test(powerSeg)) {
     result.powerType = powerSeg[0];
@@ -128,28 +91,14 @@ function decodePartNumber(raw: string) {
     errors.push(`Cannot parse power type/value from: ${powerSeg}`);
   }
 
-  // Segment 4: Voltage Range
   result.voltageRange = segments[4];
-
-  // Segment 5: Dimming
   result.dimming = segments[5];
-
-  // Segment 6: CCT
   result.cct = segments[6];
-
-  // Segment 7: Light Distribution
   result.lightDistribution = segments[7];
-
-  // Segment 8: Driver
   result.driver = segments[8];
-
-  // Segment 9: Finish
   result.finish = segments[9];
-
-  // Segment 10: Manufacturer
   result.manufacturer = segments[10];
 
-  // Remaining: optional segments
   const optionals = segments.slice(11);
   const lensTypes = ["SC", "SF", "SM", "l"];
   const emergencyOpts = ["EM", "EM2", "EM5", "EMB16", "EM18", "x"];
@@ -176,7 +125,157 @@ function decodePartNumber(raw: string) {
   return { valid: errors.length === 0, segments: result, errors };
 }
 
-// ─── LIST ─────────────────────────────────────────────────────────────────────
+router.post("/validate-builder", async (req, res) => {
+  const parsed = ValidateBuilderPartNumberBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const draft = parsed.data.draft as BuilderDraft;
+  const ignoreId = parsed.data.ignoreId ?? null;
+
+  const missingRequiredFields = REQUIRED_CORE_FIELDS
+    .filter(({ key }) => !normalizeDraftValue(draft[key]))
+    .map(({ label }) => label);
+
+  const [segmentRows, parts] = await Promise.all([
+    db.select().from(segmentValuesTable).where(eq(segmentValuesTable.isActive, true)),
+    db.select().from(partNumbersTable).orderBy(desc(partNumbersTable.updatedAt)).limit(250),
+  ]);
+
+  const { byKey, byKeyAndCode } = createSegmentIndex(segmentRows);
+  const requiredFieldSet = new Set(REQUIRED_CORE_FIELDS.map((item) => item.key));
+  const selectedModel = normalizeDraftValue(draft.productModel);
+  const fieldIssues: Array<{ field: string; message: string; severity: "error" | "warning" }> = [];
+
+  for (const [field, rawValue] of Object.entries(draft) as Array<[BuilderField, string | null | undefined]>) {
+    if (field === "productCategory" || field === "productName") {
+      continue;
+    }
+
+    const value = normalizeDraftValue(rawValue);
+    if (!value) {
+      continue;
+    }
+
+    const key = field as SegmentKey;
+    const match = byKeyAndCode.get(`${key}:${value}`);
+
+    if (!match) {
+      fieldIssues.push({
+        field,
+        message: `${SEGMENT_FIELD_LABELS[field]} value "${value}" is not an active allowed code.`,
+        severity: "error",
+      });
+      continue;
+    }
+
+    if (
+      selectedModel &&
+      match.applicableProducts.length > 0 &&
+      !match.applicableProducts.includes(selectedModel)
+    ) {
+      fieldIssues.push({
+        field,
+        message: `${value} is not marked as applicable to product model ${selectedModel}.`,
+        severity: requiredFieldSet.has(field) ? "error" : "warning",
+      });
+    }
+  }
+
+  if (!normalizeDraftValue(draft.productName)) {
+    fieldIssues.push({
+      field: "productName",
+      message: "Product Name is empty. The builder can still create a fallback name, but you should review it.",
+      severity: "warning",
+    });
+  }
+
+  const assembledPartNumber = canAssemblePartNumber(draft) ? buildPartNumber(draft) : null;
+  const duplicateMatch = assembledPartNumber
+    ? parts.find((part) => part.partNumber === assembledPartNumber && part.id !== ignoreId)
+    : undefined;
+
+  const similarMatches = parts
+    .filter((part) => part.id !== ignoreId)
+    .map((part) => ({
+      part,
+      similarityScore: scoreSimilarity(draft, part),
+    }))
+    .filter(({ part, similarityScore }) => {
+      if (duplicateMatch && part.id === duplicateMatch.id) {
+        return false;
+      }
+      return similarityScore >= 8;
+    })
+    .sort((a, b) => b.similarityScore - a.similarityScore)
+    .slice(0, 5)
+    .map(({ part, similarityScore }) => ({
+      id: part.id,
+      partNumber: part.partNumber,
+      productName: part.productName,
+      productCategory: part.productCategory,
+      status: part.status,
+      similarityScore,
+    }));
+
+  const fieldsNeedingSuggestions = new Set<SegmentKey>();
+  for (const { key } of REQUIRED_CORE_FIELDS) {
+    if (key !== "productCategory" && key !== "productName" && !normalizeDraftValue(draft[key])) {
+      fieldsNeedingSuggestions.add(key as SegmentKey);
+    }
+  }
+  for (const issue of fieldIssues) {
+    if (issue.field !== "productCategory" && issue.field !== "productName" && issue.field in SEGMENT_FIELD_LABELS) {
+      fieldsNeedingSuggestions.add(issue.field as SegmentKey);
+    }
+  }
+
+  const nextSuggestions = [...fieldsNeedingSuggestions]
+    .map((field) => {
+      const values = (byKey.get(field) ?? [])
+        .filter((row) => {
+          if (!selectedModel) {
+            return true;
+          }
+          return row.applicableProducts.length === 0 || row.applicableProducts.includes(selectedModel);
+        })
+        .slice(0, 5)
+        .map((row) => ({
+          code: row.code,
+          description: row.description,
+        }));
+
+      return {
+        field,
+        label: SEGMENT_FIELD_LABELS[field],
+        values,
+      };
+    })
+    .filter((item) => item.values.length > 0);
+
+  const hasErrors = fieldIssues.some((issue) => issue.severity === "error");
+
+  res.json({
+    assembledPartNumber,
+    isReadyToCreate: missingRequiredFields.length === 0 && !hasErrors && !duplicateMatch,
+    missingRequiredFields,
+    fieldIssues,
+    duplicateMatch: duplicateMatch
+      ? {
+          id: duplicateMatch.id,
+          partNumber: duplicateMatch.partNumber,
+          productName: duplicateMatch.productName,
+          productCategory: duplicateMatch.productCategory,
+          status: duplicateMatch.status,
+          similarityScore: 999,
+        }
+      : null,
+    similarMatches,
+    nextSuggestions,
+  });
+});
 
 router.get("/", async (req, res) => {
   const parsed = ListPartNumbersQueryParams.safeParse(req.query);
@@ -184,6 +283,7 @@ router.get("/", async (req, res) => {
     res.status(400).json({ error: "Invalid query parameters" });
     return;
   }
+
   const { page, limit, search, category, productModel, status, cct, finish, voltageRange } = parsed.data;
   const offset = ((page ?? 1) - 1) * (limit ?? 25);
 
@@ -191,14 +291,14 @@ router.get("/", async (req, res) => {
   if (search) {
     conditions.push(
       or(
-        ilike(partNumbersTable.partNumber, `%${search}%`),
-        ilike(partNumbersTable.productName, `%${search}%`),
-        ilike(partNumbersTable.productDescription, `%${search}%`),
-        ilike(partNumbersTable.sku, `%${search}%`),
-      )
+        containsInsensitive(partNumbersTable.partNumber, search),
+        containsInsensitive(partNumbersTable.productName, search),
+        containsInsensitive(partNumbersTable.productDescription, search),
+        containsInsensitive(partNumbersTable.sku, search),
+      ),
     );
   }
-  if (category) conditions.push(ilike(partNumbersTable.productCategory, `%${category}%`));
+  if (category) conditions.push(containsInsensitive(partNumbersTable.productCategory, category));
   if (productModel) conditions.push(eq(partNumbersTable.productModel, productModel));
   if (status) conditions.push(eq(partNumbersTable.status, status));
   if (cct) conditions.push(eq(partNumbersTable.cct, cct));
@@ -219,8 +319,6 @@ router.get("/", async (req, res) => {
   res.json({ data, total: Number(total), page: page ?? 1, limit: limit ?? 25 });
 });
 
-// ─── RECENT ───────────────────────────────────────────────────────────────────
-
 router.get("/recent", async (_req, res) => {
   const data = await db.select()
     .from(partNumbersTable)
@@ -229,26 +327,24 @@ router.get("/recent", async (_req, res) => {
   res.json(data);
 });
 
-// ─── DECODE ───────────────────────────────────────────────────────────────────
-
 router.post("/decode", async (req, res) => {
   const parsed = DecodePartNumberBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "partNumber is required" });
     return;
   }
+
   const { partNumber } = parsed.data;
   const result = decodePartNumber(partNumber);
-  if ((result as any).parseFailure) {
+  if ((result as { parseFailure?: boolean }).parseFailure) {
     res.status(400).json({ error: result.errors[0] });
     return;
   }
+
   res.json({ raw: partNumber, valid: result.valid, segments: result.segments, errors: result.errors });
 });
 
-// ─── CREATE ───────────────────────────────────────────────────────────────────
-
-router.post("/", async (req, res) => {
+router.post("/", requireCap("create"), async (req, res) => {
   const parsed = CreatePartNumberBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -258,7 +354,6 @@ router.post("/", async (req, res) => {
   const data = parsed.data;
   const partNumber = buildPartNumber(data);
 
-  // Check for duplicate
   const existing = await db.select({ id: partNumbersTable.id })
     .from(partNumbersTable)
     .where(eq(partNumbersTable.partNumber, partNumber))
@@ -268,13 +363,13 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  const [created] = await db.insert(partNumbersTable)
+  const [{ id }] = await db.insert(partNumbersTable)
     .values({ ...data, partNumber })
-    .returning();
+    .$returningId();
+  const [created] = await db.select().from(partNumbersTable)
+    .where(eq(partNumbersTable.id, id));
   res.status(201).json(created);
 });
-
-// ─── GET ONE ──────────────────────────────────────────────────────────────────
 
 router.get("/:id", async (req, res) => {
   const parsed = GetPartNumberParams.safeParse({ id: Number(req.params.id) });
@@ -282,18 +377,18 @@ router.get("/:id", async (req, res) => {
     res.status(400).json({ error: "Invalid id" });
     return;
   }
+
   const [row] = await db.select().from(partNumbersTable)
     .where(eq(partNumbersTable.id, parsed.data.id));
   if (!row) {
     res.status(404).json({ error: "Part number not found" });
     return;
   }
+
   res.json(row);
 });
 
-// ─── UPDATE ───────────────────────────────────────────────────────────────────
-
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", requireCap("edit"), async (req, res) => {
   const paramsParsed = UpdatePartNumberParams.safeParse({ id: Number(req.params.id) });
   if (!paramsParsed.success) {
     res.status(400).json({ error: "Invalid id" });
@@ -317,7 +412,6 @@ router.patch("/:id", async (req, res) => {
   const merged = { ...existing, ...updates };
   const newPartNumber = buildPartNumber(merged);
 
-  // Check for duplicate only if the part number would change
   if (newPartNumber !== existing.partNumber) {
     const conflict = await db.select({ id: partNumbersTable.id })
       .from(partNumbersTable)
@@ -329,39 +423,40 @@ router.patch("/:id", async (req, res) => {
     }
   }
 
-  const [updated] = await db.update(partNumbersTable)
+  await db.update(partNumbersTable)
     .set({ ...updates, partNumber: newPartNumber, updatedAt: new Date() })
     .where(eq(partNumbersTable.id, paramsParsed.data.id))
-    .returning();
+    .execute();
+  const [updated] = await db.select().from(partNumbersTable)
+    .where(eq(partNumbersTable.id, paramsParsed.data.id));
   res.json(updated);
 });
 
-// ─── DELETE ───────────────────────────────────────────────────────────────────
-
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireCap("delete"), async (req, res) => {
   const parsed = DeletePartNumberParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid id" });
     return;
   }
+
   const [existing] = await db.select({ id: partNumbersTable.id })
     .from(partNumbersTable).where(eq(partNumbersTable.id, parsed.data.id));
   if (!existing) {
     res.status(404).json({ error: "Part number not found" });
     return;
   }
+
   await db.delete(partNumbersTable).where(eq(partNumbersTable.id, parsed.data.id));
   res.status(204).send();
 });
 
-// ─── DUPLICATE ────────────────────────────────────────────────────────────────
-
-router.post("/:id/duplicate", async (req, res) => {
+router.post("/:id/duplicate", requireCap("duplicate"), async (req, res) => {
   const parsed = DuplicatePartNumberParams.safeParse({ id: Number(req.params.id) });
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid id" });
     return;
   }
+
   const [existing] = await db.select().from(partNumbersTable)
     .where(eq(partNumbersTable.id, parsed.data.id));
   if (!existing) {
@@ -369,12 +464,18 @@ router.post("/:id/duplicate", async (req, res) => {
     return;
   }
 
-  // Create a unique part number for the duplicate
   const suffix = `_COPY_${Date.now()}`;
   const { id, createdAt, updatedAt, partNumber, ...rest } = existing;
-  const [created] = await db.insert(partNumbersTable)
-    .values({ ...rest, partNumber: partNumber + suffix, status: "draft", productName: `${rest.productName} (Copy)` })
-    .returning();
+  const [{ id: duplicateId }] = await db.insert(partNumbersTable)
+    .values({
+      ...rest,
+      partNumber: partNumber + suffix,
+      status: "draft",
+      productName: `${rest.productName} (Copy)`,
+    })
+    .$returningId();
+  const [created] = await db.select().from(partNumbersTable)
+    .where(eq(partNumbersTable.id, duplicateId));
   res.status(201).json(created);
 });
 

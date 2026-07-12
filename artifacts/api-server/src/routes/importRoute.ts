@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, partNumbersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { BulkImportPartNumbersBody } from "@workspace/api-zod";
+import { requireCap } from "../lib/auth";
 
 const router = Router();
 
@@ -58,7 +59,7 @@ function buildPartNumber(fields: {
   return opts.length > 0 ? `${core}-${opts.join("-")}` : core;
 }
 
-router.post("/", async (req, res) => {
+router.post("/", requireCap("import"), async (req, res) => {
   const parsed = BulkImportPartNumbersBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });

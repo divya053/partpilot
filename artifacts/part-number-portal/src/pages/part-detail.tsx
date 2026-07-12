@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { useGetPartNumber, useDecodePartNumber, useDeletePartNumber, useDuplicatePartNumber, useUpdatePartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey } from "@workspace/api-client-react";
+import { useGetPartNumber, useDecodePartNumber, useDeletePartNumber, useDuplicatePartNumber, useUpdatePartNumber, useExplainPartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey, type AiExplainResponse } from "@workspace/api-client-react";
 import { useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
-import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle } from "lucide-react";
+import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { AiInsights } from "@/components/ai/ai-insights";
+import { useAuth } from "@/lib/auth";
+import { invalidateAi } from "@/lib/ai-refresh";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,16 +19,30 @@ export default function PartDetail() {
   const id = parseInt(params?.id || "0", 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: part, isLoading, refetch } = useGetPartNumber(id, { query: { enabled: !!id, queryKey: getGetPartNumberQueryKey(id) } });
   const { mutateAsync: decodePart } = useDecodePartNumber();
   const { mutateAsync: updatePart } = useUpdatePartNumber();
   const { mutateAsync: duplicatePart } = useDuplicatePartNumber();
   const { mutateAsync: deletePart } = useDeletePartNumber();
+  const { mutateAsync: explainPart, isPending: isExplaining } = useExplainPartNumber();
 
   const [decodedSegments, setDecodedSegments] = useState<any>(null);
   const [isDecoding, setIsDecoding] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [explanation, setExplanation] = useState<AiExplainResponse | null>(null);
+
+  const handleExplain = async () => {
+    if (!id) return;
+    try {
+      const res = await explainPart({ data: { partId: id, partNumber: null } });
+      setExplanation(res);
+    } catch (err) {
+      toast({ title: "Explain failed", description: "Could not generate an explanation.", variant: "destructive" });
+    }
+  };
 
   const handleDecode = async () => {
     if (!part?.partNumber) return;
@@ -42,6 +60,7 @@ export default function PartDetail() {
   const handleStatusChange = async (newStatus: string) => {
     try {
       await updatePart({ id, data: { status: newStatus as PartNumberUpdateStatus } });
+      invalidateAi(queryClient);
       toast({ title: "Status Updated", description: `Part is now ${newStatus}.` });
       refetch();
     } catch (err) {
@@ -52,6 +71,7 @@ export default function PartDetail() {
   const handleDuplicate = async () => {
     try {
       const newPart = await duplicatePart({ id });
+      invalidateAi(queryClient);
       toast({ title: "Duplicated", description: "Navigating to duplicate." });
       setLocation(`/library/${newPart.id}`);
     } catch (err) {
@@ -62,6 +82,7 @@ export default function PartDetail() {
   const handleDelete = async () => {
     try {
       await deletePart({ id });
+      invalidateAi(queryClient);
       toast({ title: "Deleted", description: "Part number permanently removed." });
       setLocation("/library");
     } catch (err) {
@@ -131,42 +152,50 @@ export default function PartDetail() {
             <p className="text-xl text-sidebar-foreground mt-4 font-medium">{part.productName || "No Product Name"}</p>
           </div>
 
-          <div className="flex flex-col gap-3 min-w-[200px]">
-            <Select value={part.status} onValueChange={handleStatusChange}>
-              <SelectTrigger className="bg-sidebar-accent border-sidebar-accent-border text-sidebar-foreground">
-                <SelectValue placeholder="Change Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft"><span className="flex items-center gap-2"><FileDigit className="w-4 h-4 text-amber-500"/> Draft</span></SelectItem>
-                <SelectItem value="active"><span className="flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-500"/> Active</span></SelectItem>
-                <SelectItem value="deprecated"><span className="flex items-center gap-2"><Ban className="w-4 h-4 text-destructive"/> Deprecated</span></SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1 border-sidebar-accent text-sidebar-foreground bg-sidebar-accent/50 hover:bg-sidebar-accent" onClick={handleDuplicate}>
-                <Copy className="w-4 h-4 mr-2" /> Clone
-              </Button>
-              <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="border-red-900/50 text-red-400 bg-red-950/20 hover:bg-red-900/40 hover:text-red-300">
-                    <Trash2 className="w-4 h-4" />
+          {can("edit") || can("duplicate") || can("delete") ? (
+            <div className="flex flex-col gap-3 min-w-[200px]">
+              {can("edit") ? (
+                <Select value={part.status} onValueChange={handleStatusChange}>
+                  <SelectTrigger className="bg-sidebar-accent border-sidebar-accent-border text-sidebar-foreground">
+                    <SelectValue placeholder="Change Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft"><span className="flex items-center gap-2"><FileDigit className="w-4 h-4 text-amber-500"/> Draft</span></SelectItem>
+                    <SelectItem value="active"><span className="flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-500"/> Active</span></SelectItem>
+                    <SelectItem value="deprecated"><span className="flex items-center gap-2"><Ban className="w-4 h-4 text-destructive"/> Deprecated</span></SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : null}
+              <div className="flex gap-2">
+                {can("duplicate") ? (
+                  <Button variant="outline" className="flex-1 border-sidebar-accent text-sidebar-foreground bg-sidebar-accent/50 hover:bg-sidebar-accent" onClick={handleDuplicate}>
+                    <Copy className="w-4 h-4 mr-2" /> Clone
                   </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete Part Number</DialogTitle>
-                    <DialogDescription>
-                      Are you sure you want to delete <strong className="font-mono text-foreground">{part.partNumber}</strong>? This action cannot be undone.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-                    <Button variant="destructive" onClick={handleDelete}>Delete Permanently</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                ) : null}
+                {can("delete") ? (
+                  <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="border-red-900/50 text-red-400 bg-red-950/20 hover:bg-red-900/40 hover:text-red-300">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Delete Part Number</DialogTitle>
+                        <DialogDescription>
+                          Are you sure you want to delete <strong className="font-mono text-foreground">{part.partNumber}</strong>? This action cannot be undone.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+                        <Button variant="destructive" onClick={handleDelete}>Delete Permanently</Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                ) : null}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </div>
 
@@ -212,6 +241,44 @@ export default function PartDetail() {
           </Card>
 
           <Card className="shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between py-4 bg-muted/20 border-b border-border">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2"><Sparkles className="w-5 h-5 text-primary" /> Plain-English Explanation</CardTitle>
+                <CardDescription>What every segment of this code actually means.</CardDescription>
+              </div>
+              <Button variant="secondary" size="sm" onClick={handleExplain} disabled={isExplaining}>
+                {isExplaining ? "Explaining..." : explanation ? "Regenerate" : "Explain This Part"}
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6">
+              {explanation ? (
+                <div className="space-y-4">
+                  <p className="text-sm leading-7 text-foreground">{explanation.summary}</p>
+                  <div className="divide-y divide-border rounded-lg border border-border">
+                    {explanation.segments.map((seg) => (
+                      <div key={seg.key} className="flex items-start gap-3 px-4 py-2.5">
+                        <span className="min-w-[130px] text-xs font-bold uppercase tracking-wider text-muted-foreground">{seg.label}</span>
+                        <span className="font-mono font-bold text-primary">{seg.code}</span>
+                        <span className="flex-1 text-sm text-muted-foreground">{seg.meaning}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {!explanation.aiConfigured ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Descriptions come from your segment catalog. Add a free GROQ_API_KEY for an AI-written summary.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="py-10 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                  <Sparkles className="w-10 h-10 mb-3 text-muted" />
+                  <p className="text-sm">Click "Explain This Part" for a human-readable breakdown.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
             <CardHeader className="py-4 bg-muted/20 border-b border-border">
               <CardTitle className="text-lg text-foreground">Internal Notes</CardTitle>
             </CardHeader>
@@ -224,6 +291,13 @@ export default function PartDetail() {
         </div>
 
         <div className="space-y-6">
+          <AiInsights
+            scope="part"
+            partId={id}
+            title="AI Review"
+            description="Checks this part against your registry."
+          />
+
           <Card className="shadow-sm bg-muted/10">
             <CardHeader className="py-4 border-b border-border">
               <CardTitle className="text-base">Metadata</CardTitle>
