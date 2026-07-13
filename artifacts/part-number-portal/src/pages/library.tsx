@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListPartNumbers, listPartNumbers, ListPartNumbersStatus } from "@workspace/api-client-react";
+import { useListPartNumbers, listPartNumbers, useGetStatsByCategory, useGetStatsByModel, ListPartNumbersStatus } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { Search, Filter, Plus, ChevronRight, SlidersHorizontal, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -62,13 +62,21 @@ export default function Library() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ListPartNumbersStatus | "all">("all");
   const [category, setCategory] = useState<string>("all");
+  const [model, setModel] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+
+  // Real categories/models present in the data, for the filter dropdowns.
+  const { data: categoryStats } = useGetStatsByCategory();
+  const { data: modelStats } = useGetStatsByModel();
+  const categories = (categoryStats ?? []).map((c) => c.category).filter(Boolean);
+  const models = (modelStats ?? []).map((m) => m.model).filter(Boolean);
 
   const { data: partNumbersData, isLoading } = useListPartNumbers({
     search: search || undefined,
     status: status !== "all" ? status : undefined,
     category: category !== "all" ? category : undefined,
+    productModel: model !== "all" ? model : undefined,
     page,
     limit: PAGE_SIZE,
   });
@@ -85,6 +93,7 @@ export default function Library() {
         search: search || undefined,
         status: status !== "all" ? status : undefined,
         category: category !== "all" ? category : undefined,
+        productModel: model !== "all" ? model : undefined,
         page: 1,
         limit: Math.max(total, 1),
       });
@@ -169,16 +178,26 @@ export default function Library() {
             </Select>
 
             <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1); }}>
-              <SelectTrigger className="w-[160px] bg-background">
+              <SelectTrigger className="w-[150px] bg-background">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="High Bay">High Bay</SelectItem>
-                <SelectItem value="Linear">Linear</SelectItem>
-                <SelectItem value="Vapor Tight">Vapor Tight</SelectItem>
-                <SelectItem value="Area Light">Area Light</SelectItem>
-                <SelectItem value="Wall Pack">Wall Pack</SelectItem>
+                {categories.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={model} onValueChange={(v) => { setModel(v); setPage(1); }}>
+              <SelectTrigger className="w-[140px] bg-background">
+                <SelectValue placeholder="Model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Models</SelectItem>
+                {models.map((m) => (
+                  <SelectItem key={m} value={m}>{m}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -215,7 +234,7 @@ export default function Library() {
                       <Search className="w-10 h-10 mb-4 text-muted" />
                       <p className="text-lg font-medium text-foreground">No parts found</p>
                       <p className="text-sm mt-1">Try adjusting your filters or search query.</p>
-                      <Button variant="outline" className="mt-4" onClick={() => {setSearch(''); setStatus('all'); setCategory('all');}}>Clear Filters</Button>
+                      <Button variant="outline" className="mt-4" onClick={() => {setSearch(''); setStatus('all'); setCategory('all'); setModel('all'); setPage(1);}}>Clear Filters</Button>
                     </div>
                   </td>
                 </tr>
