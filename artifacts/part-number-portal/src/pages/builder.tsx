@@ -7,8 +7,10 @@ import {
   type PartNumberInput,
   PartNumberInputStatus,
   type SegmentDefinition,
+  type PartNumberUpdate,
   useAddSegmentValue,
   useCreatePartNumber,
+  useUpdatePartNumber,
   useGetModelDefaults,
   useListSegments,
   usePredictNextFields,
@@ -108,6 +110,9 @@ const CLEAR_OPTION = "__none__";
 // sessionStorage key used to hand a part's fields from the detail page into the
 // builder for "Duplicate & Edit".
 export const BUILDER_PREFILL_KEY = "partpilot:builder-prefill";
+// When present alongside a prefill, the builder edits that part in place (update)
+// instead of creating a new one.
+export const BUILDER_EDIT_ID_KEY = "partpilot:builder-edit-id";
 
 const coreFields: Array<{ key: keyof BuilderFormData; label: string }> = [
   { key: "company", label: "Company" },
@@ -301,9 +306,12 @@ export default function Builder() {
   const { data: segments, isLoading: segmentsLoading } = useListSegments();
   const queryClient = useQueryClient();
   const { mutateAsync: createPartNumber, isPending: isCreating } = useCreatePartNumber();
+  const { mutateAsync: updatePart, isPending: isUpdating } = useUpdatePartNumber();
   const { mutateAsync: validateBuilderPartNumber, isPending: isValidating } = useValidateBuilderPartNumber();
   const { mutateAsync: predictNextFields } = usePredictNextFields();
 
+  // When set, the builder is editing an existing part (update) rather than creating.
+  const [editId, setEditId] = useState<number | null>(null);
   const [step, setStep] = useState(1);
   const [validation, setValidation] = useState<BuilderValidationResult | null>(null);
   const [formData, setFormData] = useState<BuilderFormData>(emptyForm);
@@ -322,13 +330,27 @@ export default function Builder() {
       const raw = sessionStorage.getItem(BUILDER_PREFILL_KEY);
       if (!raw) return;
       sessionStorage.removeItem(BUILDER_PREFILL_KEY);
+      const rawEditId = sessionStorage.getItem(BUILDER_EDIT_ID_KEY);
+      sessionStorage.removeItem(BUILDER_EDIT_ID_KEY);
+      const parsedEditId = rawEditId ? Number(rawEditId) : null;
+      const isEdit = parsedEditId != null && !Number.isNaN(parsedEditId);
+
       const parsed = JSON.parse(raw) as Partial<BuilderFormData>;
-      setFormData({ ...emptyForm, ...parsed, status: PartNumberInputStatus.draft });
-      setStep(2);
-      toast({
-        title: "Editing a copy",
-        description: "Change what you need, then Create Part to generate a new number.",
+      setFormData({
+        ...emptyForm,
+        ...parsed,
+        status: isEdit ? parsed.status ?? PartNumberInputStatus.draft : PartNumberInputStatus.draft,
       });
+      setStep(2);
+      if (isEdit) {
+        setEditId(parsedEditId);
+        toast({ title: "Editing this part", description: "Change any field, then Save Changes." });
+      } else {
+        toast({
+          title: "Editing a copy",
+          description: "Change what you need, then Create Part to generate a new number.",
+        });
+      }
     } catch {
       /* ignore a malformed prefill payload */
     }
@@ -495,12 +517,27 @@ export default function Builder() {
     };
 
     try {
+      if (editId != null) {
+        // Edit an existing part in place. company isn't part of the update body;
+        // the server keeps the existing value.
+        const updateData: Record<string, unknown> = { ...payload };
+        delete updateData.company;
+        const updated = await updatePart({ id: editId, data: updateData as unknown as PartNumberUpdate });
+        await queryClient.invalidateQueries();
+        toast({ title: "Part updated", description: `${updated.partNumber} saved.` });
+        setLocation(`/library/${editId}`);
+        return;
+      }
       const created = await createPartNumber({ data: payload });
       invalidateAi(queryClient);
       toast({ title: "Part created — AI retrained", description: `${created.partNumber} added to what the model has learned.` });
       setLocation(`/library/${created.id}`);
     } catch {
-      toast({ title: "Create failed", description: "The server rejected the part number create request.", variant: "destructive" });
+      toast({
+        title: editId != null ? "Update failed" : "Create failed",
+        description: "The server rejected the request.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -508,9 +545,11 @@ export default function Builder() {
     <div className="p-8 space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Part Builder</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">{editId != null ? "Edit Part" : "Part Builder"}</h1>
           <p className="mt-1 text-muted-foreground">
-            Build part numbers with live validation, duplicate detection, and data-driven prefill.
+            {editId != null
+              ? "Change any field below, then Save Changes to update this part."
+              : "Build part numbers with live validation, duplicate detection, and data-driven prefill."}
           </p>
         </div>
         <div className="flex gap-3">
@@ -518,9 +557,9 @@ export default function Builder() {
             <RefreshCw className="w-4 h-4" />
             Reset
           </Button>
-          <Button onClick={handleCreate} disabled={isCreating || !validation?.isReadyToCreate}>
+          <Button onClick={handleCreate} disabled={isCreating || isUpdating || !validation?.isReadyToCreate}>
             <CheckCircle2 className="w-4 h-4" />
-            Create Part
+            {editId != null ? "Save Changes" : "Create Part"}
           </Button>
         </div>
       </div>
@@ -680,9 +719,9 @@ export default function Builder() {
                     Next: {BUILDER_STEPS[step]?.title}
                   </Button>
                 ) : (
-                  <Button onClick={handleCreate} disabled={isCreating || !validation?.isReadyToCreate}>
+                  <Button onClick={handleCreate} disabled={isCreating || isUpdating || !validation?.isReadyToCreate}>
                     <CheckCircle2 className="h-4 w-4" />
-                    Create Part
+                    {editId != null ? "Save Changes" : "Create Part"}
                   </Button>
                 )}
               </div>

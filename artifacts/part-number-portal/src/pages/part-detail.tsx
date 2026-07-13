@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useGetPartNumber, useDeletePartNumber, useUpdatePartNumber, useExplainPartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey, type AiExplainResponse } from "@workspace/api-client-react";
-import { BUILDER_PREFILL_KEY } from "./builder";
+import { BUILDER_PREFILL_KEY, BUILDER_EDIT_ID_KEY } from "./builder";
 import { useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
 import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle, Sparkles, Building2 } from "lucide-react";
@@ -98,15 +98,13 @@ export default function PartDetail() {
     }
   };
 
-  // "Duplicate & Edit": hand this part's fields to the builder (pre-filled) so the
-  // user can adjust and generate a NEW, validated part number — instead of silently
-  // creating a "_COPY_" clone that just becomes a flagged duplicate.
-  const handleDuplicateEdit = () => {
-    if (!part) return;
-    const prefill = {
+  // Build the builder's pre-fill payload from this part's fields.
+  const partToPrefill = () => {
+    if (!part) return null;
+    return {
       productCategory: part.productCategory ?? "",
       productName: part.productName ?? "",
-      sku: "",
+      sku: part.sku ?? "",
       productDescription: part.productDescription ?? "",
       internalNotes: part.internalNotes ?? "",
       vendorName: part.vendorName ?? "",
@@ -134,8 +132,26 @@ export default function PartDetail() {
       photocontrolOption: part.photocontrolOption ?? "",
       connectableOption: part.connectableOption ?? "",
       base: part.base ?? "",
+      status: part.status,
     };
+  };
+
+  // "Edit": open the builder pre-filled to change every field (segments + metadata)
+  // and save back to THIS part.
+  const handleFullEdit = () => {
+    const prefill = partToPrefill();
+    if (!prefill || !part) return;
     sessionStorage.setItem(BUILDER_PREFILL_KEY, JSON.stringify(prefill));
+    sessionStorage.setItem(BUILDER_EDIT_ID_KEY, String(part.id));
+    setLocation("/builder");
+  };
+
+  // "Duplicate & Edit": pre-fill the builder to create a NEW part from this one
+  // (blank SKU, drafts a fresh number) — no "_COPY_" clone.
+  const handleDuplicateEdit = () => {
+    const prefill = partToPrefill();
+    if (!prefill) return;
+    sessionStorage.setItem(BUILDER_PREFILL_KEY, JSON.stringify({ ...prefill, sku: "" }));
     setLocation("/builder");
   };
 
@@ -226,10 +242,15 @@ export default function PartDetail() {
                   </SelectContent>
                 </Select>
               ) : null}
+              {can("edit") ? (
+                <Button variant="default" className="w-full" onClick={handleFullEdit}>
+                  <Edit3 className="w-4 h-4 mr-2" /> Edit Part
+                </Button>
+              ) : null}
               <div className="flex gap-2">
                 {can("duplicate") ? (
                   <Button variant="outline" className="flex-1 border-sidebar-accent text-sidebar-foreground bg-sidebar-accent/50 hover:bg-sidebar-accent" onClick={handleDuplicateEdit}>
-                    <Edit3 className="w-4 h-4 mr-2" /> Duplicate &amp; Edit
+                    <Copy className="w-4 h-4 mr-2" /> Duplicate
                   </Button>
                 ) : null}
                 {can("delete") ? (
@@ -264,8 +285,8 @@ export default function PartDetail() {
           <Card className="shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between py-4 bg-muted/20 border-b border-border">
               <div>
-                <CardTitle className="text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-primary" /> Product Details</CardTitle>
-                <CardDescription>Vendor, certificates, and product stage.</CardDescription>
+                <CardTitle className="text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-primary" /> Product Details &amp; Notes</CardTitle>
+                <CardDescription>Vendor, certificates, stage, and internal notes.</CardDescription>
               </div>
               {can("edit") ? (
                 <Button variant="secondary" size="sm" onClick={openEditDetails}>
@@ -300,6 +321,12 @@ export default function PartDetail() {
                 ) : (
                   <span className="text-muted-foreground text-sm">No certificates added.</span>
                 )}
+              </div>
+              <div className="md:col-span-2">
+                <span className="block text-xs uppercase font-bold tracking-wider text-muted-foreground mb-1">Internal Notes</span>
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {part.internalNotes || <span className="text-muted-foreground">No internal notes provided.</span>}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -423,16 +450,6 @@ export default function PartDetail() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm">
-            <CardHeader className="py-4 bg-muted/20 border-b border-border">
-              <CardTitle className="text-lg text-foreground">Internal Notes</CardTitle>
-            </CardHeader>
-            <CardContent className="p-6">
-              <p className="text-muted-foreground whitespace-pre-wrap">
-                {part.internalNotes || "No internal notes provided for this part."}
-              </p>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="space-y-6">
