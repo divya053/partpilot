@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useGetPartNumber, useDeletePartNumber, useDuplicatePartNumber, useUpdatePartNumber, useExplainPartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey, type AiExplainResponse } from "@workspace/api-client-react";
+import { useGetPartNumber, useDeletePartNumber, useUpdatePartNumber, useExplainPartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey, type AiExplainResponse } from "@workspace/api-client-react";
+import { BUILDER_PREFILL_KEY } from "./builder";
 import { useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
 import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle, Sparkles } from "lucide-react";
@@ -24,7 +25,6 @@ export default function PartDetail() {
 
   const { data: part, isLoading, refetch } = useGetPartNumber(id, { query: { enabled: !!id, queryKey: getGetPartNumberQueryKey(id) } });
   const { mutateAsync: updatePart } = useUpdatePartNumber();
-  const { mutateAsync: duplicatePart } = useDuplicatePartNumber();
   const { mutateAsync: deletePart } = useDeletePartNumber();
   const { mutateAsync: explainPart, isPending: isExplaining } = useExplainPartNumber();
 
@@ -52,15 +52,42 @@ export default function PartDetail() {
     }
   };
 
-  const handleDuplicate = async () => {
-    try {
-      const newPart = await duplicatePart({ id });
-      invalidateAi(queryClient);
-      toast({ title: "Duplicated", description: "Navigating to duplicate." });
-      setLocation(`/library/${newPart.id}`);
-    } catch (err) {
-      toast({ title: "Error", description: "Failed to duplicate.", variant: "destructive" });
-    }
+  // "Duplicate & Edit": hand this part's fields to the builder (pre-filled) so the
+  // user can adjust and generate a NEW, validated part number — instead of silently
+  // creating a "_COPY_" clone that just becomes a flagged duplicate.
+  const handleDuplicateEdit = () => {
+    if (!part) return;
+    const prefill = {
+      productCategory: part.productCategory ?? "",
+      productName: part.productName ?? "",
+      sku: "",
+      productDescription: part.productDescription ?? "",
+      internalNotes: part.internalNotes ?? "",
+      company: part.company ?? "",
+      productModel: part.productModel ?? "",
+      versionVariant: part.versionVariant ?? "",
+      sizeVariant: part.sizeVariant ?? "",
+      powerType: part.powerType ?? "",
+      maxPower: part.maxPower ?? "",
+      voltageRange: part.voltageRange ?? "",
+      dimming: part.dimming ?? "",
+      cct: part.cct ?? "",
+      lightDistribution: part.lightDistribution ?? "",
+      driver: part.driver ?? "",
+      finish: part.finish ?? "",
+      manufacturer: part.manufacturer ?? "",
+      lensType: part.lensType ?? "",
+      emergencyOption: part.emergencyOption ?? "",
+      sensorOption: part.sensorOption ?? "",
+      surgeProtection: part.surgeProtection ?? "",
+      reflectorCover: part.reflectorCover ?? "",
+      mountingOption: part.mountingOption ?? "",
+      photocontrolOption: part.photocontrolOption ?? "",
+      connectableOption: part.connectableOption ?? "",
+      base: part.base ?? "",
+    };
+    sessionStorage.setItem(BUILDER_PREFILL_KEY, JSON.stringify(prefill));
+    setLocation("/builder");
   };
 
   const handleDelete = async () => {
@@ -152,8 +179,8 @@ export default function PartDetail() {
               ) : null}
               <div className="flex gap-2">
                 {can("duplicate") ? (
-                  <Button variant="outline" className="flex-1 border-sidebar-accent text-sidebar-foreground bg-sidebar-accent/50 hover:bg-sidebar-accent" onClick={handleDuplicate}>
-                    <Copy className="w-4 h-4 mr-2" /> Clone
+                  <Button variant="outline" className="flex-1 border-sidebar-accent text-sidebar-foreground bg-sidebar-accent/50 hover:bg-sidebar-accent" onClick={handleDuplicateEdit}>
+                    <Edit3 className="w-4 h-4 mr-2" /> Duplicate &amp; Edit
                   </Button>
                 ) : null}
                 {can("delete") ? (

@@ -101,6 +101,10 @@ type SegmentFieldKey =
 
 const CLEAR_OPTION = "__none__";
 
+// sessionStorage key used to hand a part's fields from the detail page into the
+// builder for "Duplicate & Edit".
+export const BUILDER_PREFILL_KEY = "partpilot:builder-prefill";
+
 const coreFields: Array<{ key: keyof BuilderFormData; label: string }> = [
   { key: "company", label: "Company" },
   { key: "productModel", label: "Product Model" },
@@ -302,6 +306,28 @@ export default function Builder() {
 
   const deferredFormData = useDeferredValue(formData);
   const segmentMap = useMemo(() => new Map((segments ?? []).map((segment) => [segment.key, segment])), [segments]);
+
+  // "Duplicate & Edit" from a part detail page drops the source part's fields into
+  // sessionStorage and navigates here. Load them into the form once, then clear —
+  // the user tweaks what they want and creates a brand-new (validated) part number.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(BUILDER_PREFILL_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(BUILDER_PREFILL_KEY);
+      const parsed = JSON.parse(raw) as Partial<BuilderFormData>;
+      setFormData({ ...emptyForm, ...parsed, status: PartNumberInputStatus.draft });
+      setStep(2);
+      toast({
+        title: "Editing a copy",
+        description: "Change what you need, then Create Part to generate a new number.",
+      });
+    } catch {
+      /* ignore a malformed prefill payload */
+    }
+    // Run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
