@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListPartNumbers, ListPartNumbersStatus } from "@workspace/api-client-react";
+import { useListPartNumbers, listPartNumbers, ListPartNumbersStatus } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { Search, Filter, Plus, ChevronRight, SlidersHorizontal, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,16 +7,63 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AiInsights } from "@/components/ai/ai-insights";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
 const PAGE_SIZE = 50;
 
+// Columns exported to CSV — every stored field, in a sensible order.
+const CSV_COLUMNS: Array<[string, (p: any) => unknown]> = [
+  ["Part Number", (p) => p.partNumber],
+  ["Product Name", (p) => p.productName],
+  ["Category", (p) => p.productCategory],
+  ["SKU", (p) => p.sku],
+  ["Status", (p) => p.status],
+  ["Company", (p) => p.company],
+  ["Model", (p) => p.productModel],
+  ["Version/Variant", (p) => p.versionVariant],
+  ["Size", (p) => p.sizeVariant],
+  ["Power Type", (p) => p.powerType],
+  ["Max Power", (p) => p.maxPower],
+  ["Voltage", (p) => p.voltageRange],
+  ["Dimming", (p) => p.dimming],
+  ["CCT", (p) => p.cct],
+  ["Light Distribution", (p) => p.lightDistribution],
+  ["Driver", (p) => p.driver],
+  ["Finish", (p) => p.finish],
+  ["Manufacturer", (p) => p.manufacturer],
+  ["Lens", (p) => p.lensType],
+  ["Emergency", (p) => p.emergencyOption],
+  ["Sensor", (p) => p.sensorOption],
+  ["Surge Protection", (p) => p.surgeProtection],
+  ["Reflector", (p) => p.reflectorCover],
+  ["Mounting", (p) => p.mountingOption],
+  ["Photocontrol", (p) => p.photocontrolOption],
+  ["Connectable", (p) => p.connectableOption],
+  ["Base", (p) => p.base],
+  ["Description", (p) => p.productDescription],
+  ["Internal Notes", (p) => p.internalNotes],
+  ["Created At", (p) => p.createdAt],
+];
+
+function toCsv(rows: any[]): string {
+  const esc = (v: unknown) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = CSV_COLUMNS.map(([h]) => h).join(",");
+  const body = rows.map((r) => CSV_COLUMNS.map(([, get]) => esc(get(r))).join(",")).join("\n");
+  return `${header}\n${body}`;
+}
+
 export default function Library() {
   const { can } = useAuth();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ListPartNumbersStatus | "all">("all");
   const [category, setCategory] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   const { data: partNumbersData, isLoading } = useListPartNumbers({
     search: search || undefined,
@@ -30,6 +77,39 @@ export default function Library() {
   const total = partNumbersData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      // Pull every row matching the current filters (not just the visible page).
+      const res = await listPartNumbers({
+        search: search || undefined,
+        status: status !== "all" ? status : undefined,
+        category: category !== "all" ? category : undefined,
+        page: 1,
+        limit: Math.max(total, 1),
+      });
+      const rows = res.data ?? [];
+      if (rows.length === 0) {
+        toast({ title: "Nothing to export", description: "No parts match the current filters." });
+        return;
+      }
+      const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "partpilot-library.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Exported", description: `${rows.length} part${rows.length === 1 ? "" : "s"} downloaded as CSV.` });
+    } catch {
+      toast({ variant: "destructive", title: "Export failed", description: "Could not export the library. Please try again." });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="p-8 h-full flex flex-col">
       <div className="flex items-center justify-between mb-8">
@@ -38,8 +118,8 @@ export default function Library() {
           <p className="text-muted-foreground mt-1">Browse, search, and manage all generated part numbers.</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="gap-2 font-medium">
-            <Download className="w-4 h-4" /> Export CSV
+          <Button variant="outline" className="gap-2 font-medium" onClick={handleExportCsv} disabled={exporting || total === 0}>
+            <Download className="w-4 h-4" /> {exporting ? "Exporting…" : "Export CSV"}
           </Button>
           {can("create") ? (
             <Link href="/builder">
