@@ -17,6 +17,11 @@ export const partNumbersTable = mysqlTable("part_numbers", {
   productDescription: text("product_description"),
   internalNotes: text("internal_notes"),
 
+  // Extra product metadata (editable on the detail page and in the builder).
+  vendorName: text("vendor_name"),
+  productStage: text("product_stage"),               // stocked | temporary
+  certificates: json("certificates").$type<Array<{ name: string; status: string }>>(), // status: pending | in_process | done
+
   // Core required segments
   company: text("company").notNull().default("IK"),
   productModel: text("product_model").notNull(),      // UHB, RHB, LHB, etc.

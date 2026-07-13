@@ -302,6 +302,11 @@ export interface BuilderValidationResult {
   nextSuggestions: BuilderNextSuggestion[];
 }
 
+export interface Certificate {
+  name: string;
+  status: string;
+}
+
 export type PartNumberStatus = typeof PartNumberStatus[keyof typeof PartNumberStatus];
 
 
@@ -322,6 +327,12 @@ export interface PartNumber {
   productDescription?: string | null;
   /** @nullable */
   internalNotes?: string | null;
+  /** @nullable */
+  vendorName?: string | null;
+  /** @nullable */
+  productStage?: string | null;
+  /** @nullable */
+  certificates?: Certificate[] | null;
   company: string;
   productModel: string;
   versionVariant: string;
@@ -376,6 +387,12 @@ export interface PartNumberInput {
   productDescription?: string | null;
   /** @nullable */
   internalNotes?: string | null;
+  /** @nullable */
+  vendorName?: string | null;
+  /** @nullable */
+  productStage?: string | null;
+  /** @nullable */
+  certificates?: Certificate[] | null;
   company: string;
   productModel: string;
   versionVariant: string;
@@ -428,6 +445,12 @@ export interface PartNumberUpdate {
   productDescription?: string | null;
   /** @nullable */
   internalNotes?: string | null;
+  /** @nullable */
+  vendorName?: string | null;
+  /** @nullable */
+  productStage?: string | null;
+  /** @nullable */
+  certificates?: Certificate[] | null;
   productModel?: string;
   versionVariant?: string;
   sizeVariant?: string;

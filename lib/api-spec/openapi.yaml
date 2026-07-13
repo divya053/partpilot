@@ -1315,6 +1315,17 @@ components:
           items:
             $ref: "#/components/schemas/BuilderNextSuggestion"
 
+    Certificate:
+      type: object
+      required:
+        - name
+        - status
+      properties:
+        name:
+          type: string
+        status:
+          type: string   # pending | in_process | done (enforced in UI)
+
     PartNumber:
       type: object
       required:
@@ -1353,6 +1364,14 @@ components:
           type: ["string", "null"]
         internalNotes:
           type: ["string", "null"]
+        vendorName:
+          type: ["string", "null"]
+        productStage:
+          type: ["string", "null"]
+        certificates:
+          type: ["array", "null"]
+          items:
+            $ref: '#/components/schemas/Certificate'
         company:
           type: string
         productModel:
@@ -1436,6 +1455,14 @@ components:
           type: ["string", "null"]
         internalNotes:
           type: ["string", "null"]
+        vendorName:
+          type: ["string", "null"]
+        productStage:
+          type: ["string", "null"]
+        certificates:
+          type: ["array", "null"]
+          items:
+            $ref: '#/components/schemas/Certificate'
         company:
           type: string
           default: "IK"
@@ -1499,6 +1526,14 @@ components:
           type: ["string", "null"]
         internalNotes:
           type: ["string", "null"]
+        vendorName:
+          type: ["string", "null"]
+        productStage:
+          type: ["string", "null"]
+        certificates:
+          type: ["array", "null"]
+          items:
+            $ref: '#/components/schemas/Certificate'
         productModel:
           type: string
         versionVariant:

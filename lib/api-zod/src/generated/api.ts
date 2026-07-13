@@ -303,6 +303,12 @@ export const ListPartNumbersResponse = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string(),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -347,6 +353,12 @@ export const CreatePartNumberBody = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string().default(createPartNumberBodyCompanyDefault),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -380,6 +392,12 @@ export const CreatePartNumberResponse = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string(),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -526,6 +544,12 @@ export const GetRecentPartNumbersResponseItem = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string(),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -570,6 +594,12 @@ export const GetPartNumberResponse = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string(),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -611,6 +641,12 @@ export const UpdatePartNumberBody = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "productModel": zod.string().optional(),
   "versionVariant": zod.string().optional(),
   "sizeVariant": zod.string().optional(),
@@ -643,6 +679,12 @@ export const UpdatePartNumberResponse = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string(),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -696,6 +738,12 @@ export const DuplicatePartNumberResponse = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string(),
   "productModel": zod.string(),
   "versionVariant": zod.string(),
@@ -880,6 +928,12 @@ export const BulkImportPartNumbersBody = zod.object({
   "sku": zod.string().nullish(),
   "productDescription": zod.string().nullish(),
   "internalNotes": zod.string().nullish(),
+  "vendorName": zod.string().nullish(),
+  "productStage": zod.string().nullish(),
+  "certificates": zod.array(zod.object({
+  "name": zod.string(),
+  "status": zod.string()
+})).nullish(),
   "company": zod.string().default(bulkImportPartNumbersBodyPartNumbersItemCompanyDefault),
   "productModel": zod.string(),
   "versionVariant": zod.string(),

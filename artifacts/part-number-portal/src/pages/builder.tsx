@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { CertificatesEditor, type Certificate } from "@/components/certificates-editor";
 import { useAuth } from "@/lib/auth";
 import { AiInsights } from "@/components/ai/ai-insights";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,9 @@ type BuilderFormData = {
   sku: string;
   productDescription: string;
   internalNotes: string;
+  vendorName: string;
+  productStage: string;
+  certificates: Certificate[];
   company: string;
   productModel: string;
   versionVariant: string;
@@ -161,6 +165,9 @@ const emptyForm: BuilderFormData = {
   sku: "",
   productDescription: "",
   internalNotes: "",
+  vendorName: "",
+  productStage: "",
+  certificates: [],
   company: "IK",
   productModel: "",
   versionVariant: "",
@@ -429,7 +436,7 @@ export default function Builder() {
       for (const f of fields) {
         // Never overwrite a value the user already chose.
         if (!String(next[f.field as keyof BuilderFormData] ?? "").trim()) {
-          (next as Record<string, string>)[f.field] = f.code;
+          (next as Record<string, unknown>)[f.field] = f.code;
         }
       }
       return next;
@@ -449,12 +456,19 @@ export default function Builder() {
       return;
     }
 
+    const cleanedCertificates = formData.certificates
+      .filter((c) => c.name.trim() !== "")
+      .map((c) => ({ name: c.name.trim(), status: c.status || "pending" }));
+
     const payload: PartNumberInput = {
       productCategory: formData.productCategory.trim(),
       productName: formData.productName.trim() || validation.assembledPartNumber || "Unnamed Part",
       sku: normalizeOptional(formData.sku),
       productDescription: normalizeOptional(formData.productDescription),
       internalNotes: normalizeOptional(formData.internalNotes),
+      vendorName: normalizeOptional(formData.vendorName),
+      productStage: normalizeOptional(formData.productStage),
+      certificates: cleanedCertificates.length > 0 ? cleanedCertificates : null,
       company: formData.company.trim(),
       productModel: formData.productModel.trim(),
       versionVariant: formData.versionVariant.trim(),
@@ -585,6 +599,17 @@ export default function Builder() {
                     ]}
                     onChange={(value) => handleChange("status", value as PartNumberInputStatus)}
                   />
+                  <TextField label="Vendor Name" value={formData.vendorName} onChange={(value) => handleChange("vendorName", value)} />
+                  <SelectField
+                    label="Product Stage"
+                    value={formData.productStage}
+                    options={[
+                      { code: "stocked", description: "Stocked" },
+                      { code: "temporary", description: "Temporary" },
+                    ]}
+                    onChange={(value) => handleChange("productStage", value)}
+                    allowClear
+                  />
                   <div className="md:col-span-2">
                     <Label className="mb-2 block">Product Description</Label>
                     <Textarea value={formData.productDescription} onChange={(event) => handleChange("productDescription", event.target.value)} />
@@ -592,6 +617,13 @@ export default function Builder() {
                   <div className="md:col-span-2">
                     <Label className="mb-2 block">Internal Notes</Label>
                     <Textarea value={formData.internalNotes} onChange={(event) => handleChange("internalNotes", event.target.value)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label className="mb-2 block">Certificates</Label>
+                    <CertificatesEditor
+                      value={formData.certificates}
+                      onChange={(next) => setFormData((current) => ({ ...current, certificates: next }))}
+                    />
                   </div>
                 </div>
               ) : null}
@@ -602,7 +634,7 @@ export default function Builder() {
                     <SelectField
                       key={field.key}
                       label={field.label}
-                      value={formData[field.key]}
+                      value={formData[field.key] as string}
                       options={getSegmentOptions(field.key as SegmentFieldKey)}
                       onChange={(value) => handleChange(field.key, value)}
                       isLoading={segmentsLoading}
@@ -623,7 +655,7 @@ export default function Builder() {
                     <SelectField
                       key={field.key}
                       label={field.label}
-                      value={formData[field.key]}
+                      value={formData[field.key] as string}
                       options={getSegmentOptions(field.key as SegmentFieldKey)}
                       onChange={(value) => handleChange(field.key, value)}
                       allowClear

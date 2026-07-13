@@ -5,6 +5,7 @@
  * IK Part Number Portal API
  * OpenAPI spec version: 0.1.0
  */
+import type { Certificate } from './certificate';
 import type { PartNumberUpdateStatus } from './partNumberUpdateStatus';
 
 export interface PartNumberUpdate {
@@ -16,6 +17,12 @@ export interface PartNumberUpdate {
   productDescription?: string | null;
   /** @nullable */
   internalNotes?: string | null;
+  /** @nullable */
+  vendorName?: string | null;
+  /** @nullable */
+  productStage?: string | null;
+  /** @nullable */
+  certificates?: Certificate[] | null;
   productModel?: string;
   versionVariant?: string;
   sizeVariant?: string;

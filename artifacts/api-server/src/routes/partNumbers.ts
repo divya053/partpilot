@@ -28,6 +28,30 @@ import { requireCap } from "../lib/auth";
 
 const router = Router();
 
+// mysql2 hands back JSON columns as raw strings here (same as segment_values'
+// applicable_products), so coerce `certificates` to an array before responding.
+function parseCertificates(value: unknown): Array<{ name: string; status: string }> | null {
+  let arr: unknown = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") return null;
+    try {
+      arr = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(arr)) return null;
+  return arr
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+    .map((x) => ({ name: String(x.name ?? ""), status: String(x.status ?? "") }))
+    .filter((c) => c.name !== "");
+}
+
+function serializePart<T extends { certificates?: unknown }>(row: T): T {
+  return { ...row, certificates: parseCertificates(row.certificates) };
+}
+
 function containsInsensitive(column: SQLWrapper, value: string) {
   return sql`lower(${column}) like ${`%${value.toLowerCase()}%`}`;
 }
@@ -316,7 +340,7 @@ router.get("/", async (req, res) => {
     db.select({ total: count() }).from(partNumbersTable).where(where),
   ]);
 
-  res.json({ data, total: Number(total), page: page ?? 1, limit: limit ?? 25 });
+  res.json({ data: data.map(serializePart), total: Number(total), page: page ?? 1, limit: limit ?? 25 });
 });
 
 router.get("/recent", async (_req, res) => {
@@ -324,7 +348,7 @@ router.get("/recent", async (_req, res) => {
     .from(partNumbersTable)
     .orderBy(desc(partNumbersTable.updatedAt))
     .limit(10);
-  res.json(data);
+  res.json(data.map(serializePart));
 });
 
 router.post("/decode", async (req, res) => {
@@ -368,7 +392,7 @@ router.post("/", requireCap("create"), async (req, res) => {
     .$returningId();
   const [created] = await db.select().from(partNumbersTable)
     .where(eq(partNumbersTable.id, id));
-  res.status(201).json(created);
+  res.status(201).json(serializePart(created));
 });
 
 router.get("/:id", async (req, res) => {
@@ -385,7 +409,7 @@ router.get("/:id", async (req, res) => {
     return;
   }
 
-  res.json(row);
+  res.json(serializePart(row));
 });
 
 router.patch("/:id", requireCap("edit"), async (req, res) => {
@@ -429,7 +453,7 @@ router.patch("/:id", requireCap("edit"), async (req, res) => {
     .execute();
   const [updated] = await db.select().from(partNumbersTable)
     .where(eq(partNumbersTable.id, paramsParsed.data.id));
-  res.json(updated);
+  res.json(serializePart(updated));
 });
 
 router.delete("/:id", requireCap("delete"), async (req, res) => {
@@ -476,7 +500,7 @@ router.post("/:id/duplicate", requireCap("duplicate"), async (req, res) => {
     .$returningId();
   const [created] = await db.select().from(partNumbersTable)
     .where(eq(partNumbersTable.id, duplicateId));
-  res.status(201).json(created);
+  res.status(201).json(serializePart(created));
 });
 
 export default router;

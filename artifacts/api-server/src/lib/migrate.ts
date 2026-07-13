@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS part_numbers (
   sku TEXT,
   product_description TEXT,
   internal_notes TEXT,
+  vendor_name TEXT,
+  product_stage TEXT,
+  certificates JSON,
   company TEXT NOT NULL,
   product_model TEXT NOT NULL,
   version_variant TEXT NOT NULL,
@@ -90,12 +93,31 @@ async function waitForDb(retries = 20, delayMs = 2000): Promise<void> {
   }
 }
 
+// MySQL 8 has no `ADD COLUMN IF NOT EXISTS`, so check information_schema first.
+// Lets new columns land on databases created before they existed (idempotent).
+async function ensureColumn(table: string, column: string, ddl: string): Promise<void> {
+  const [rows] = await pool.query(
+    "SELECT COUNT(*) AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+    [table, column],
+  );
+  const exists = Number((rows as Array<{ c: number }>)[0]?.c ?? 0) > 0;
+  if (!exists) {
+    await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN ${ddl}`);
+    logger.info({ table, column }, "Added column");
+  }
+}
+
 export async function migrateAndSeed(): Promise<void> {
   await waitForDb();
 
   await pool.query(CREATE_PART_NUMBERS);
   await pool.query(CREATE_SEGMENT_VALUES);
   await pool.query(CREATE_USERS);
+
+  // Additive columns for existing databases.
+  await ensureColumn("part_numbers", "vendor_name", "vendor_name TEXT");
+  await ensureColumn("part_numbers", "product_stage", "product_stage TEXT");
+  await ensureColumn("part_numbers", "certificates", "certificates JSON");
 
   const [rows] = await pool.query("SELECT COUNT(*) AS c FROM users");
   const count = Number((rows as Array<{ c: number }>)[0]?.c ?? 0);

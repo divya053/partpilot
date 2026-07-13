@@ -33,6 +33,7 @@ export * from './builderValidationInput';
 export * from './builderValidationResult';
 export * from './bulkImportInput';
 export * from './categoryCount';
+export * from './certificate';
 export * from './createUserInput';
 export * from './dashboardStats';
 export * from './decodedPartNumber';

@@ -3,9 +3,13 @@ import { useGetPartNumber, useDeletePartNumber, useUpdatePartNumber, useExplainP
 import { BUILDER_PREFILL_KEY } from "./builder";
 import { useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
-import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle, Sparkles } from "lucide-react";
+import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle, Sparkles, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { CertificatesEditor, certStatusLabel, certStatusClasses, type Certificate } from "@/components/certificates-editor";
 import { AiInsights } from "@/components/ai/ai-insights";
 import { useAuth } from "@/lib/auth";
 import { invalidateAi } from "@/lib/ai-refresh";
@@ -30,6 +34,48 @@ export default function PartDetail() {
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [explanation, setExplanation] = useState<AiExplainResponse | null>(null);
+
+  // Edit-details dialog state.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editVendor, setEditVendor] = useState("");
+  const [editStage, setEditStage] = useState("");
+  const [editCerts, setEditCerts] = useState<Certificate[]>([]);
+  const [editNotes, setEditNotes] = useState("");
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  const openEditDetails = () => {
+    setEditVendor(part?.vendorName ?? "");
+    setEditStage(part?.productStage ?? "");
+    setEditCerts((part?.certificates as Certificate[]) ?? []);
+    setEditNotes(part?.internalNotes ?? "");
+    setEditOpen(true);
+  };
+
+  const saveDetails = async () => {
+    setSavingDetails(true);
+    try {
+      const cleaned = editCerts
+        .filter((c) => c.name.trim() !== "")
+        .map((c) => ({ name: c.name.trim(), status: c.status || "pending" }));
+      await updatePart({
+        id,
+        data: {
+          vendorName: editVendor.trim() || null,
+          productStage: editStage || null,
+          certificates: cleaned.length > 0 ? cleaned : null,
+          internalNotes: editNotes.trim() || null,
+        },
+      });
+      invalidateAi(queryClient);
+      toast({ title: "Details saved", description: "Product details updated." });
+      setEditOpen(false);
+      refetch();
+    } catch {
+      toast({ title: "Save failed", description: "Could not save the details.", variant: "destructive" });
+    } finally {
+      setSavingDetails(false);
+    }
+  };
 
   const handleExplain = async () => {
     if (!id) return;
@@ -63,6 +109,9 @@ export default function PartDetail() {
       sku: "",
       productDescription: part.productDescription ?? "",
       internalNotes: part.internalNotes ?? "",
+      vendorName: part.vendorName ?? "",
+      productStage: part.productStage ?? "",
+      certificates: (part.certificates as Certificate[]) ?? [],
       company: part.company ?? "",
       productModel: part.productModel ?? "",
       versionVariant: part.versionVariant ?? "",
@@ -212,6 +261,86 @@ export default function PartDetail() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
+          <Card className="shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between py-4 bg-muted/20 border-b border-border">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2"><Building2 className="w-5 h-5 text-primary" /> Product Details</CardTitle>
+                <CardDescription>Vendor, certificates, and product stage.</CardDescription>
+              </div>
+              {can("edit") ? (
+                <Button variant="secondary" size="sm" onClick={openEditDetails}>
+                  <Edit3 className="w-4 h-4 mr-2" /> Edit
+                </Button>
+              ) : null}
+            </CardHeader>
+            <CardContent className="p-6 grid gap-6 md:grid-cols-2">
+              <div>
+                <span className="block text-xs uppercase font-bold tracking-wider text-muted-foreground mb-1">Vendor</span>
+                <span className="font-medium text-foreground">{part.vendorName || "Not set"}</span>
+              </div>
+              <div>
+                <span className="block text-xs uppercase font-bold tracking-wider text-muted-foreground mb-1">Product Stage</span>
+                {part.productStage ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize bg-primary/10 text-primary border border-primary/20">{part.productStage}</span>
+                ) : (
+                  <span className="text-muted-foreground">Not set</span>
+                )}
+              </div>
+              <div className="md:col-span-2">
+                <span className="block text-xs uppercase font-bold tracking-wider text-muted-foreground mb-2">Certificates</span>
+                {part.certificates && part.certificates.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {part.certificates.map((c, i) => (
+                      <span key={i} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm">
+                        <span className="font-medium text-foreground">{c.name}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${certStatusClasses(c.status)}`}>{certStatusLabel(c.status)}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-muted-foreground text-sm">No certificates added.</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Edit product details</DialogTitle>
+                <DialogDescription>Vendor, stage, certificates, and internal notes for this part.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto pr-1">
+                <div>
+                  <Label className="mb-1.5 block">Vendor Name</Label>
+                  <Input value={editVendor} onChange={(e) => setEditVendor(e.target.value)} placeholder="Supplier / vendor name" />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Product Stage</Label>
+                  <Select value={editStage || undefined} onValueChange={setEditStage}>
+                    <SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="stocked">Stocked</SelectItem>
+                      <SelectItem value="temporary">Temporary</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Certificates</Label>
+                  <CertificatesEditor value={editCerts} onChange={setEditCerts} />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">Internal Notes</Label>
+                  <Textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Notes visible to your team" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                <Button onClick={saveDetails} disabled={savingDetails}>{savingDetails ? "Saving…" : "Save"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {part.productDescription ? (
             <Card className="shadow-sm">
               <CardHeader className="py-4 bg-muted/20 border-b border-border">
