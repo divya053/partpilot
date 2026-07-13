@@ -7,11 +7,13 @@ import {
   type PartNumberInput,
   PartNumberInputStatus,
   type SegmentDefinition,
+  useAddSegmentValue,
   useCreatePartNumber,
   useGetModelDefaults,
   useListSegments,
   usePredictNextFields,
   useValidateBuilderPartNumber,
+  getListSegmentsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
@@ -24,6 +26,7 @@ import {
   RefreshCw,
   Wand2,
   Check,
+  Plus,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +36,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useAuth } from "@/lib/auth";
 import { AiInsights } from "@/components/ai/ai-insights";
 import { cn } from "@/lib/utils";
 import { invalidateAi } from "@/lib/ai-refresh";
@@ -524,6 +529,12 @@ export default function Builder() {
                       options={getSegmentOptions(field.key as SegmentFieldKey)}
                       onChange={(value) => handleChange(field.key, value)}
                       isLoading={segmentsLoading}
+                      segmentKey={field.key}
+                      scopeToProduct={
+                        field.key === "productModel" || field.key === "company"
+                          ? undefined
+                          : formData.productModel
+                      }
                     />
                   ))}
                 </div>
@@ -540,6 +551,8 @@ export default function Builder() {
                       onChange={(value) => handleChange(field.key, value)}
                       allowClear
                       isLoading={segmentsLoading}
+                      segmentKey={field.key}
+                      scopeToProduct={formData.productModel}
                     />
                   ))}
                 </div>
@@ -1012,6 +1025,8 @@ function SelectField({
   onChange,
   allowClear = false,
   isLoading = false,
+  segmentKey,
+  scopeToProduct,
 }: {
   label: string;
   value: string;
@@ -1019,10 +1034,63 @@ function SelectField({
   onChange: (value: string) => void;
   allowClear?: boolean;
   isLoading?: boolean;
+  // When set, this dropdown is a real segment and can offer inline value creation.
+  segmentKey?: string;
+  // New values get scoped to the product model being built (if one is chosen).
+  scopeToProduct?: string;
 }) {
+  const { can } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const addValue = useAddSegmentValue();
+  const canAdd = Boolean(segmentKey) && can("manageSegments");
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newCode, setNewCode] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+
+  const submitNewValue = async () => {
+    const code = newCode.trim();
+    if (!segmentKey || !code) return;
+    try {
+      await addValue.mutateAsync({
+        key: segmentKey,
+        data: {
+          code,
+          description: newDescription.trim() || code,
+          applicableProducts: scopeToProduct ? [scopeToProduct] : [],
+        },
+      });
+      await queryClient.invalidateQueries({ queryKey: getListSegmentsQueryKey() });
+      onChange(code);
+      toast({ title: "Value added", description: `“${code}” is now available under ${label}.` });
+      setNewCode("");
+      setNewDescription("");
+      setDialogOpen(false);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't add value",
+        description:
+          error instanceof Error ? error.message : `“${code}” may already exist in ${label}.`,
+      });
+    }
+  };
+
   return (
     <div>
-      <Label className="mb-2 block">{label}</Label>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <Label className="block">{label}</Label>
+        {canAdd ? (
+          <button
+            type="button"
+            onClick={() => setDialogOpen(true)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            <Plus className="h-3 w-3" /> Add new
+          </button>
+        ) : null}
+      </div>
       <Select
         value={value || undefined}
         onValueChange={(nextValue) => onChange(nextValue === CLEAR_OPTION ? "" : nextValue)}
@@ -1037,8 +1105,65 @@ function SelectField({
               {option.code} {option.description ? `- ${option.description}` : ""}
             </SelectItem>
           ))}
+          {options.length === 0 && !isLoading ? (
+            <div className="px-2 py-2 text-xs text-muted-foreground">
+              No options yet{canAdd ? " — use “Add new” above." : "."}
+            </div>
+          ) : null}
         </SelectContent>
       </Select>
+
+      {canAdd ? (
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add a new {label}</DialogTitle>
+              <DialogDescription>
+                Adds a new option to the {label} list so it can be used in part numbers
+                {scopeToProduct ? ` for ${scopeToProduct}` : ""}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label className="mb-1.5 block">Code</Label>
+                <Input
+                  value={newCode}
+                  onChange={(event) => setNewCode(event.target.value)}
+                  placeholder="e.g. 12"
+                  autoFocus
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void submitNewValue();
+                    }
+                  }}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The short code that appears in the assembled part number.
+                </p>
+              </div>
+              <div>
+                <Label className="mb-1.5 block">
+                  Description <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  value={newDescription}
+                  onChange={(event) => setNewDescription(event.target.value)}
+                  placeholder="What this code means, in plain words"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={submitNewValue} disabled={!newCode.trim() || addValue.isPending}>
+                {addValue.isPending ? "Adding…" : "Add value"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
