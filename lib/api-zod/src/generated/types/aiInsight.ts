@@ -5,6 +5,7 @@
  * IK Part Number Portal API
  * OpenAPI spec version: 0.1.0
  */
+import type { AiInsightItemsItem } from './aiInsightItemsItem';
 import type { AiInsightSeverity } from './aiInsightSeverity';
 
 export interface AiInsight {
@@ -19,4 +20,6 @@ export interface AiInsight {
   actionHref: string | null;
   /** @nullable */
   field: string | null;
+  /** @nullable */
+  items?: AiInsightItemsItem[] | null;
 }

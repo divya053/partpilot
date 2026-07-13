@@ -128,8 +128,24 @@ function InsightCard({ insight, index }: { insight: AiInsight; index: number }) 
             {insight.message}
           </p>
 
+          {open && insight.items && insight.items.length > 0 ? (
+            <ul className="mt-2 space-y-1.5 border-l-2 border-border/70 pl-3">
+              {insight.items.map((it, idx) => (
+                <li key={idx} className="text-[12px] leading-5">
+                  {it.href ? (
+                    <Link href={it.href} className="break-all font-mono text-primary hover:underline">
+                      {it.label}
+                    </Link>
+                  ) : (
+                    <span className="break-all font-mono text-muted-foreground">{it.label}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
           <div className="mt-1.5 flex items-center gap-1">
-            {insight.message.length > 60 ? (
+            {insight.message.length > 60 || (insight.items && insight.items.length > 0) ? (
               <button
                 onClick={() => setOpen((v) => !v)}
                 className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground"

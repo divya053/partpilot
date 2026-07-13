@@ -15,6 +15,7 @@ export * from './aiExplainInput';
 export * from './aiExplainResponse';
 export * from './aiFieldPrediction';
 export * from './aiInsight';
+export * from './aiInsightItemsItem';
 export * from './aiInsightSeverity';
 export * from './aiInsightsResponse';
 export * from './aiLearningStatus';

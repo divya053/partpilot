@@ -1079,6 +1079,18 @@ components:
           type: ["string", "null"]
         field:
           type: ["string", "null"]
+        items:
+          type: ["array", "null"]
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - label
+            properties:
+              label:
+                type: string
+              href:
+                type: ["string", "null"]
 
     AiInsightsResponse:
       type: object

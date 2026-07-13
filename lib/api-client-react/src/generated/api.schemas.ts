@@ -172,6 +172,12 @@ export const AiInsightSeverity = {
   critical: 'critical',
 } as const;
 
+export type AiInsightItemsItem = {
+  label: string;
+  /** @nullable */
+  href?: string | null;
+};
+
 export interface AiInsight {
   id: string;
   scope: string;
@@ -184,6 +190,8 @@ export interface AiInsight {
   actionHref: string | null;
   /** @nullable */
   field: string | null;
+  /** @nullable */
+  items?: AiInsightItemsItem[] | null;
 }
 
 export interface AiInsightsResponse {

@@ -220,7 +220,11 @@ export const GetAiInsightsResponse = zod.object({
   "message": zod.string(),
   "actionLabel": zod.string().nullable(),
   "actionHref": zod.string().nullable(),
-  "field": zod.string().nullable()
+  "field": zod.string().nullable(),
+  "items": zod.array(zod.object({
+  "label": zod.string(),
+  "href": zod.string().nullish()
+})).nullish()
 }))
 })
 

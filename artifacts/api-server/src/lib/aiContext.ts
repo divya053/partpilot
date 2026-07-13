@@ -36,6 +36,9 @@ export interface Insight {
   actionLabel: string | null;
   actionHref: string | null;
   field: string | null;
+  // Optional detail list shown when the insight is expanded (e.g. every
+  // duplicate cluster, not just the first).
+  items?: Array<{ label: string; href: string | null }> | null;
 }
 
 export interface LearnedConvention {
@@ -356,10 +359,15 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       scope,
       severity: "warning",
       title: `${ctx.duplicateClusters.length} duplicate configuration${ctx.duplicateClusters.length > 1 ? "s" : ""}`,
-      message: `${c.count} parts share identical core segments (${c.parts.map((p) => p.partNumber).slice(0, 3).join(", ")}${c.count > 3 ? "…" : ""}). These are effectively the same product — consolidate or deprecate the extras.`,
+      message: `${c.count} parts share identical core segments (${c.parts.map((p) => p.partNumber).slice(0, 3).join(", ")}${c.count > 3 ? "…" : ""}). These are effectively the same product — consolidate or deprecate the extras. Expand to see all ${ctx.duplicateClusters.length} groups.`,
       actionLabel: c.parts[0] ? "Open first" : null,
       actionHref: c.parts[0] ? `/library/${c.parts[0].id}` : null,
       field: null,
+      // Every duplicate group, so expanding shows the full list (not just the first).
+      items: ctx.duplicateClusters.map((cluster) => ({
+        label: cluster.parts.map((p) => p.partNumber).join("  ·  "),
+        href: cluster.parts[0] ? `/library/${cluster.parts[0].id}` : null,
+      })),
     });
   }
 
