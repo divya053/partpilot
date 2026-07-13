@@ -77,6 +77,17 @@ const DESCRIPTION_SECTION_TO_KEY: Record<string, SegmentKey> = {
   "Base  \"B\"": "base",
 };
 
+// Excel headers vary in whitespace/case (e.g. "Reflector Cover Options  \"R\"" with
+// double spaces). cleanCell() collapses runs of spaces to one, so match on a
+// normalized form instead of the exact literal to avoid silently skipping columns.
+const normalizeHeader = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+const DROPDOWN_LOOKUP = new Map<string, SegmentKey>(
+  Object.entries(DROPDOWN_HEADER_TO_KEY).map(([key, value]) => [normalizeHeader(key), value]),
+);
+const DESCRIPTION_LOOKUP = new Map<string, SegmentKey>(
+  Object.entries(DESCRIPTION_SECTION_TO_KEY).map(([key, value]) => [normalizeHeader(key), value]),
+);
+
 const OPTIONAL_PLACEHOLDERS = new Set([
   "l",
   "x",
@@ -264,9 +275,10 @@ function collectDescriptionMap(rows: unknown[][]): Map<string, string> {
 
   for (const row of rows) {
     const sectionName = cleanCell(row[0]);
-    if (sectionName && DESCRIPTION_SECTION_TO_KEY[sectionName]) {
-      currentKey = DESCRIPTION_SECTION_TO_KEY[sectionName];
-    } else if (sectionName && !DESCRIPTION_SECTION_TO_KEY[sectionName]) {
+    const mappedKey = sectionName ? DESCRIPTION_LOOKUP.get(normalizeHeader(sectionName)) : undefined;
+    if (sectionName && mappedKey) {
+      currentKey = mappedKey;
+    } else if (sectionName && !mappedKey) {
       currentKey = null;
     }
 
@@ -414,7 +426,7 @@ function parseSegmentValues(
       continue;
     }
 
-    const segmentKey = DROPDOWN_HEADER_TO_KEY[header];
+    const segmentKey = DROPDOWN_LOOKUP.get(normalizeHeader(header));
     if (!segmentKey) {
       continue;
     }
