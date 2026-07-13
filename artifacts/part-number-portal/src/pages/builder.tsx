@@ -366,7 +366,8 @@ export default function Builder() {
         const result = await validateBuilderPartNumber({
           data: {
             draft: toValidationDraft(deferredFormData),
-            ignoreId: null,
+            // When editing an existing part, don't flag its own number as a duplicate.
+            ignoreId: editId,
           },
         });
         if (!cancelled) {
@@ -384,7 +385,7 @@ export default function Builder() {
     return () => {
       cancelled = true;
     };
-  }, [deferredFormData, validateBuilderPartNumber]);
+  }, [deferredFormData, validateBuilderPartNumber, editId]);
 
   // Per-step AI predictions: as fields are filled, predict the most likely value
   // for each remaining segment from parts matching the current selection.
