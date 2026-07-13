@@ -143,7 +143,7 @@ export default function PartDetail() {
         <div className="absolute right-0 top-0 w-1/3 h-full bg-primary/10 blur-[100px] pointer-events-none" />
         
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3 mb-3">
                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
                   part.status === 'active' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
@@ -154,9 +154,9 @@ export default function PartDetail() {
                 </span>
                 <span className="text-sidebar-foreground/60 text-sm font-medium">{part.productCategory}</span>
             </div>
-            <h1 className="text-4xl md:text-5xl font-mono font-bold tracking-tight text-primary drop-shadow-sm flex items-center gap-4">
-              {part.partNumber}
-              <Button variant="ghost" size="icon" onClick={copyCode} className="text-sidebar-foreground/50 hover:text-white hover:bg-white/10 rounded-full h-10 w-10">
+            <h1 className="text-3xl md:text-4xl font-mono font-bold tracking-tight text-primary drop-shadow-sm flex flex-wrap items-center gap-3 break-all">
+              <span className="break-all">{part.partNumber}</span>
+              <Button variant="ghost" size="icon" onClick={copyCode} className="shrink-0 text-sidebar-foreground/50 hover:text-white hover:bg-white/10 rounded-full h-10 w-10">
                 <Copy className="w-5 h-5" />
               </Button>
             </h1>
@@ -164,7 +164,7 @@ export default function PartDetail() {
           </div>
 
           {can("edit") || can("duplicate") || can("delete") ? (
-            <div className="flex flex-col gap-3 min-w-[200px]">
+            <div className="flex flex-col gap-3 w-full md:w-[220px] shrink-0">
               {can("edit") ? (
                 <Select value={part.status} onValueChange={handleStatusChange}>
                   <SelectTrigger className="bg-sidebar-accent border-sidebar-accent-border text-sidebar-foreground">
@@ -187,7 +187,7 @@ export default function PartDetail() {
                   <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                     <DialogTrigger asChild>
                       <Button variant="outline" className="border-red-900/50 text-red-400 bg-red-950/20 hover:bg-red-900/40 hover:text-red-300">
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-4 h-4 mr-2" /> Delete
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
