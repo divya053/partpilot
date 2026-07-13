@@ -322,6 +322,9 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       actionLabel: "Review drafts",
       actionHref: "/library",
       field: null,
+      items: ctx.parts
+        .filter((p) => p.status === "draft")
+        .map((p) => ({ label: p.partNumber, href: `/library/${p.id}` })),
     });
   }
 
@@ -402,6 +405,9 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       actionLabel: null,
       actionHref: null,
       field: "company",
+      items: ctx.parts
+        .filter((p) => p.company && p.company !== "IK")
+        .map((p) => ({ label: `${p.partNumber} — ${p.company}`, href: `/library/${p.id}` })),
     });
   }
 
@@ -624,12 +630,11 @@ function builderInsights(ctx: DataContext, scope: InsightScope): Insight[] {
         scope,
         severity: "suggestion",
         title: `Learned defaults for ${top.productModel}`,
-        message: `Across ${top.count} existing ${top.productModel} parts: ${top.common
-          .map((c) => `${c.label} ${c.code} (${c.share}%)`)
-          .join(", ")}. Match these unless this build is intentionally different.`,
+        message: `Across ${top.count} existing ${top.productModel} parts, these are the most common segment choices. Match them unless this build is intentionally different.`,
         actionLabel: null,
         actionHref: null,
         field: null,
+        items: top.common.map((c) => ({ label: `${c.label}: ${c.code} (${c.share}%)`, href: null })),
       });
     }
   }
