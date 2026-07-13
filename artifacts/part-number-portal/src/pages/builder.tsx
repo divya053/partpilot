@@ -129,6 +129,28 @@ const optionalFields: Array<{ key: keyof BuilderFormData; label: string }> = [
   { key: "base", label: "Base" },
 ];
 
+// Plain-English guide for the three builder steps.
+const BUILDER_STEPS = [
+  {
+    n: 1,
+    title: "Basics",
+    description:
+      "Name the product and set its status. These describe the part — they don't change the code itself.",
+  },
+  {
+    n: 2,
+    title: "Core specs",
+    description:
+      "The required options that build the part number. Fill each one and the code assembles on the right.",
+  },
+  {
+    n: 3,
+    title: "Add-ons",
+    description:
+      "Optional extras like lens, sensor, or mounting. Add only the ones this part needs — leave the rest as None.",
+  },
+] as const;
+
 const emptyForm: BuilderFormData = {
   productCategory: "",
   productName: "",
@@ -476,21 +498,50 @@ export default function Builder() {
 
           <Card>
             <CardHeader className="border-b bg-muted/20">
-              <CardTitle>Builder Steps</CardTitle>
-              <CardDescription>Fill basics, core segments, then optional add-ons.</CardDescription>
+              <CardTitle>Build the part number</CardTitle>
+              <CardDescription>Three quick steps — fill each one and the code assembles itself on the right.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6 p-6">
-              <div className="flex flex-wrap gap-2">
-                {[1, 2, 3].map((value) => (
-                  <Button
-                    key={value}
-                    variant={step === value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setStep(value)}
-                  >
-                    Step {value}
-                  </Button>
-                ))}
+              <div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {BUILDER_STEPS.map((s) => {
+                    const isCurrent = step === s.n;
+                    const isDone = step > s.n;
+                    return (
+                      <button
+                        key={s.n}
+                        type="button"
+                        onClick={() => setStep(s.n)}
+                        className={cn(
+                          "flex flex-1 items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                          isCurrent
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-primary/40 hover:bg-muted/40",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold",
+                            isCurrent
+                              ? "bg-primary text-primary-foreground"
+                              : isDone
+                                ? "bg-primary/15 text-primary"
+                                : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {isDone ? <Check className="h-4 w-4" /> : s.n}
+                        </span>
+                        <span>
+                          <span className="block text-sm font-semibold text-foreground">{s.title}</span>
+                          <span className="block text-xs text-muted-foreground">Step {s.n} of 3</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  {BUILDER_STEPS[step - 1]?.description}
+                </p>
               </div>
 
               {step === 1 ? (
@@ -557,6 +608,26 @@ export default function Builder() {
                   ))}
                 </div>
               ) : null}
+
+              <div className="flex items-center justify-between border-t pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep((current) => Math.max(1, current - 1))}
+                  disabled={step === 1}
+                >
+                  Back
+                </Button>
+                {step < 3 ? (
+                  <Button onClick={() => setStep((current) => Math.min(3, current + 1))}>
+                    Next: {BUILDER_STEPS[step]?.title}
+                  </Button>
+                ) : (
+                  <Button onClick={handleCreate} disabled={isCreating || !validation?.isReadyToCreate}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Create Part
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
 
