@@ -336,6 +336,7 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       actionLabel: "View oldest",
       actionHref: `/library/${oldest.id}`,
       field: null,
+      items: ctx.staleDrafts.map((d) => ({ label: `${d.partNumber} — ${d.ageDays} days`, href: `/library/${d.id}` })),
     });
   }
 
@@ -349,6 +350,7 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       actionLabel: "Fix first clone",
       actionHref: `/library/${ctx.copyArtifacts[0].id}`,
       field: null,
+      items: ctx.copyArtifacts.map((c) => ({ label: c.partNumber, href: `/library/${c.id}` })),
     });
   }
 
@@ -373,6 +375,9 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
 
   if (ctx.duplicateNames.length > 0) {
     const d = ctx.duplicateNames[0];
+    const sharedParts = ctx.parts.filter(
+      (p) => (p.productName ?? "").trim().toLowerCase() === d.name.trim().toLowerCase(),
+    );
     out.push({
       id: "duplicate-names",
       scope,
@@ -382,6 +387,7 @@ function registryInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       actionLabel: "Search library",
       actionHref: `/library`,
       field: null,
+      items: sharedParts.map((p) => ({ label: p.partNumber, href: `/library/${p.id}` })),
     });
   }
 
@@ -450,6 +456,7 @@ function segmentInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       actionLabel: "Manage segments",
       actionHref: "/segments",
       field: worst.key,
+      items: worst.unusedCodes.map((code) => ({ label: code, href: null })),
     });
   }
 
@@ -459,11 +466,15 @@ function segmentInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       id: "unknown-codes",
       scope,
       severity: "critical",
-      title: `Part uses an undefined ${SEGMENT_FIELD_LABELS[u.field]} code`,
+      title: `${ctx.unknownSegmentCodes.length} part${ctx.unknownSegmentCodes.length > 1 ? "s use" : " uses"} an undefined code`,
       message: `${u.partNumber} contains "${u.code}", which isn't in the ${SEGMENT_FIELD_LABELS[u.field]} segment catalog. Add the code or correct the part.`,
       actionLabel: "Open part",
       actionHref: `/library/${u.id}`,
       field: u.field,
+      items: ctx.unknownSegmentCodes.map((c) => ({
+        label: `${c.partNumber} — ${SEGMENT_FIELD_LABELS[c.field]} "${c.code}"`,
+        href: `/library/${c.id}`,
+      })),
     });
   }
 
@@ -475,9 +486,10 @@ function segmentInsights(ctx: DataContext, scope: InsightScope): Insight[] {
       severity: "info",
       title: `${thin.length} segment${thin.length > 1 ? "s have" : " has"} only one option`,
       message: `${thin.map((s) => s.label).slice(0, 5).join(", ")} offer a single code. That's fine for fixed fields, but confirm no options are missing.`,
-      actionLabel: null,
-      actionHref: null,
+      actionLabel: "Manage segments",
+      actionHref: "/segments",
       field: null,
+      items: thin.map((s) => ({ label: `${s.label} — ${s.definedCodes} code`, href: "/segments" })),
     });
   }
 
