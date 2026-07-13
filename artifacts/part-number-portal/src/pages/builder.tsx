@@ -543,7 +543,7 @@ export default function Builder() {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">{editId != null ? "Edit Part" : "Part Builder"}</h1>

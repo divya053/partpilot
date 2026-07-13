@@ -199,7 +199,7 @@ export default function Dashboard() {
           </div>
         </CardHeader>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[640px] text-sm text-left">
             <thead className="bg-muted/50 text-muted-foreground uppercase">
               <tr>
                 <th className="px-6 py-3 font-medium">Part Number</th>

@@ -111,7 +111,7 @@ export default function Library() {
   };
 
   return (
-    <div className="p-8 h-full flex flex-col">
+    <div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Part Library</h1>
@@ -185,7 +185,7 @@ export default function Library() {
         </div>
 
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[760px] text-sm text-left">
             <thead className="bg-muted/50 text-muted-foreground uppercase sticky top-0 backdrop-blur-md z-10 shadow-sm border-b border-border">
               <tr>
                 <th className="px-6 py-4 font-semibold text-xs tracking-wider">Part Number</th>

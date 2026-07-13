@@ -174,11 +174,11 @@ export default function PartDetail() {
   };
 
   if (isLoading) {
-    return <div className="p-8 h-full flex items-center justify-center">Loading record...</div>;
+    return <div className="p-4 sm:p-8 h-full flex items-center justify-center">Loading record...</div>;
   }
 
   if (!part) {
-    return <div className="p-8 h-full flex flex-col items-center justify-center">
+    return <div className="p-4 sm:p-8 h-full flex flex-col items-center justify-center">
       <h2 className="text-2xl font-bold">Part Not Found</h2>
       <Button variant="link" onClick={() => setLocation("/library")}>Return to Library</Button>
     </div>;
@@ -195,7 +195,7 @@ export default function PartDetail() {
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 animate-in slide-in-from-bottom-4 duration-300">
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
         <Link href="/library" className="hover:text-foreground flex items-center gap-1 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Library

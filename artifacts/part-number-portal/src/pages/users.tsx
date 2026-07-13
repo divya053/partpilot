@@ -89,7 +89,7 @@ export default function Users() {
   };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
@@ -136,8 +136,8 @@ export default function Users() {
         </Dialog>
       </div>
 
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        <table className="w-full text-sm text-left">
+      <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm text-left">
           <thead className="bg-muted/50 text-muted-foreground uppercase text-xs">
             <tr>
               <th className="px-6 py-3 font-semibold">User</th>

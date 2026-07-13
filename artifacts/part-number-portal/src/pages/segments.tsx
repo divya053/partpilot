@@ -24,7 +24,7 @@ export default function Segments() {
   );
 
   return (
-    <div className="p-8 max-w-6xl mx-auto flex flex-col h-full">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto flex flex-col h-full">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Segment Configuration</h1>
@@ -149,9 +149,9 @@ function SegmentItem({ segment, onUpdate }: { segment: any, onUpdate: () => void
         </div>
       </AccordionTrigger>
       <AccordionContent className="pb-6">
-        <div className="pl-14 pr-4">
-          <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-            <table className="w-full text-sm text-left">
+        <div className="pl-3 pr-2 sm:pl-14 sm:pr-4">
+          <div className="bg-card border border-border rounded-lg shadow-sm overflow-x-auto">
+            <table className="w-full min-w-[480px] text-sm text-left">
               <thead className="bg-muted/40 text-muted-foreground uppercase">
                 <tr>
                   <th className="px-4 py-3 font-semibold text-xs w-32">Code</th>

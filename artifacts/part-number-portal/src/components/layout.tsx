@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Layers, PlusSquare, LayoutDashboard, Settings, Boxes, Users as UsersIcon, LogOut } from "lucide-react";
+import { Layers, PlusSquare, LayoutDashboard, Settings, Boxes, Users as UsersIcon, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AssistantDock } from "@/components/ai/assistant-dock";
 import { useAuth, ROLE_LABELS, type Capability } from "@/lib/auth";
@@ -26,6 +27,12 @@ const ROLE_BADGE: Record<string, string> = {
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const { user, can, logout } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location]);
 
   const navigation = NAV.filter((item) => can(item.cap));
   const initials = (user?.displayName || user?.username || "?")
@@ -36,11 +43,49 @@ export function Layout({ children }: LayoutProps) {
     .toUpperCase();
 
   return (
-    <div className="min-h-screen flex bg-background w-full overflow-hidden">
-      <div className="w-64 flex flex-col bg-sidebar border-r border-sidebar-border h-screen shrink-0">
+    <div className="min-h-screen flex bg-background w-full">
+      {/* Mobile top bar */}
+      <header className="lg:hidden fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-sidebar-border bg-sidebar px-4">
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          className="-ml-1 p-1 text-sidebar-foreground"
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+        <Boxes className="h-5 w-5 text-sidebar-primary" />
+        <span className="font-bold tracking-tight text-sidebar-foreground">PartPilot</span>
+      </header>
+
+      {/* Backdrop for the mobile drawer */}
+      {mobileOpen ? (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      {/* Sidebar — static on desktop, slide-in drawer on mobile */}
+      <div
+        className={cn(
+          "w-64 flex flex-col bg-sidebar border-r border-sidebar-border h-screen shrink-0",
+          "fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:z-auto",
+          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+        )}
+      >
         <div className="h-16 flex items-center px-6 border-b border-sidebar-border shrink-0">
           <Boxes className="w-6 h-6 text-sidebar-primary mr-3" />
           <span className="font-bold text-lg tracking-tight text-sidebar-foreground">PartPilot</span>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close menu"
+            className="ml-auto lg:hidden text-sidebar-foreground/70 hover:text-sidebar-foreground"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
         <nav className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
           {navigation.map((item) => {
@@ -93,8 +138,9 @@ export function Layout({ children }: LayoutProps) {
           </div>
         </div>
       </div>
-      <main className="flex-1 h-screen overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] min-w-0">
-        <div className="w-full px-6 py-6 xl:px-8 2xl:px-10">
+
+      <main className="flex-1 h-screen overflow-y-auto bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] min-w-0 pt-14 lg:pt-0">
+        <div className="w-full px-4 py-4 sm:px-6 sm:py-6 xl:px-8 2xl:px-10">
           {children}
         </div>
       </main>
