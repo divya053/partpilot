@@ -34,6 +34,7 @@ function Router() {
   return (
     <Layout>
       <Switch>
+        <Route path="/login"><Redirect to="/" /></Route>
         <Route path="/" component={Dashboard} />
         <Route path="/builder">
           <Guard capability="create"><Builder /></Guard>
