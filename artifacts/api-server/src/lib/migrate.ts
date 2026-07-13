@@ -107,6 +107,54 @@ async function ensureColumn(table: string, column: string, ddl: string): Promise
   }
 }
 
+// Maps each part_numbers column to its segment_values key. Used to keep the
+// segment catalog in sync with codes that actually appear in parts.
+const SEGMENT_COLUMN_MAP: Array<[segmentKey: string, column: string]> = [
+  ["company", "company"],
+  ["productModel", "product_model"],
+  ["versionVariant", "version_variant"],
+  ["sizeVariant", "size_variant"],
+  ["powerType", "power_type"],
+  ["maxPower", "max_power"],
+  ["voltageRange", "voltage_range"],
+  ["dimming", "dimming"],
+  ["cct", "cct"],
+  ["lightDistribution", "light_distribution"],
+  ["driver", "driver"],
+  ["finish", "finish"],
+  ["manufacturer", "manufacturer"],
+  ["lensType", "lens_type"],
+  ["emergencyOption", "emergency_option"],
+  ["sensorOption", "sensor_option"],
+  ["surgeProtection", "surge_protection"],
+  ["reflectorCover", "reflector_cover"],
+  ["mountingOption", "mounting_option"],
+  ["photocontrolOption", "photocontrol_option"],
+  ["connectableOption", "connectable_option"],
+  ["base", "base"],
+];
+
+// Ensure every code used by an existing part exists in the segment catalog.
+// Idempotent (INSERT IGNORE): new codes get added, existing rows are untouched.
+// Column names come from the hardcoded map above, never user input.
+async function backfillSegmentValuesFromParts(): Promise<void> {
+  let added = 0;
+  for (const [segmentKey, column] of SEGMENT_COLUMN_MAP) {
+    const [result] = await pool.query(
+      `INSERT IGNORE INTO segment_values (segment_key, code, description, applicable_products, sort_order, is_active)
+       SELECT ?, \`${column}\`, \`${column}\`, JSON_ARRAY(), 0, 1
+       FROM part_numbers
+       WHERE \`${column}\` IS NOT NULL AND \`${column}\` <> ''
+       GROUP BY \`${column}\``,
+      [segmentKey],
+    );
+    added += (result as { affectedRows?: number }).affectedRows ?? 0;
+  }
+  if (added > 0) {
+    logger.info({ added }, "Backfilled segment catalog from existing parts");
+  }
+}
+
 export async function migrateAndSeed(): Promise<void> {
   await waitForDb();
 
@@ -118,6 +166,10 @@ export async function migrateAndSeed(): Promise<void> {
   await ensureColumn("part_numbers", "vendor_name", "vendor_name TEXT");
   await ensureColumn("part_numbers", "product_stage", "product_stage TEXT");
   await ensureColumn("part_numbers", "certificates", "certificates JSON");
+
+  // Keep the segment catalog complete: add any code that parts use but the
+  // catalog is missing (fixes "0 codes" segments and "undefined code" warnings).
+  await backfillSegmentValuesFromParts();
 
   const [rows] = await pool.query("SELECT COUNT(*) AS c FROM users");
   const count = Number((rows as Array<{ c: number }>)[0]?.c ?? 0);
