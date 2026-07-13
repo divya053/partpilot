@@ -9,20 +9,26 @@ import { AiInsights } from "@/components/ai/ai-insights";
 import { useAuth } from "@/lib/auth";
 import { format } from "date-fns";
 
+const PAGE_SIZE = 50;
+
 export default function Library() {
   const { can } = useAuth();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<ListPartNumbersStatus | "all">("all");
   const [category, setCategory] = useState<string>("all");
-  
+  const [page, setPage] = useState(1);
+
   const { data: partNumbersData, isLoading } = useListPartNumbers({
     search: search || undefined,
     status: status !== "all" ? status : undefined,
     category: category !== "all" ? category : undefined,
-    limit: 50
+    page,
+    limit: PAGE_SIZE,
   });
 
   const parts = partNumbersData?.data || [];
+  const total = partNumbersData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="p-8 h-full flex flex-col">
@@ -57,10 +63,10 @@ export default function Library() {
         <div className="p-4 border-b border-border bg-muted/20 flex flex-wrap gap-4 items-center">
           <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search part numbers, codes, names..." 
+            <Input
+              placeholder="Search part numbers, codes, names..."
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
               className="pl-9 w-full bg-background border-border"
             />
           </div>
@@ -70,7 +76,7 @@ export default function Library() {
               <SlidersHorizontal className="w-4 h-4 mr-2" /> Filters
             </div>
             
-            <Select value={status} onValueChange={(v: any) => setStatus(v)}>
+            <Select value={status} onValueChange={(v: any) => { setStatus(v); setPage(1); }}>
               <SelectTrigger className="w-[140px] bg-background">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -82,7 +88,7 @@ export default function Library() {
               </SelectContent>
             </Select>
 
-            <Select value={category} onValueChange={setCategory}>
+            <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1); }}>
               <SelectTrigger className="w-[160px] bg-background">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
@@ -169,8 +175,29 @@ export default function Library() {
           </table>
         </div>
         {partNumbersData && (
-          <div className="p-4 border-t border-border bg-muted/10 text-xs text-muted-foreground flex justify-between items-center">
-            <span>Showing {parts.length} of {partNumbersData.total} items</span>
+          <div className="p-4 border-t border-border bg-muted/10 text-xs text-muted-foreground flex flex-wrap justify-between items-center gap-3">
+            <span>
+              Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} items
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1 || isLoading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </Button>
+              <span className="px-1 font-medium text-foreground">Page {page} of {totalPages}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages || isLoading}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         )}
       </div>

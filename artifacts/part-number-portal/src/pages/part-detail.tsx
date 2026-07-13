@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGetPartNumber, useDecodePartNumber, useDeletePartNumber, useDuplicatePartNumber, useUpdatePartNumber, useExplainPartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey, type AiExplainResponse } from "@workspace/api-client-react";
+import { useGetPartNumber, useDeletePartNumber, useDuplicatePartNumber, useUpdatePartNumber, useExplainPartNumber, PartNumberUpdateStatus, getGetPartNumberQueryKey, type AiExplainResponse } from "@workspace/api-client-react";
 import { useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
 import { ArrowLeft, Copy, Trash2, Edit3, Settings2, FileDigit, Activity, Ban, ExternalLink, Calendar, CheckCircle, Sparkles } from "lucide-react";
@@ -23,14 +23,11 @@ export default function PartDetail() {
   const queryClient = useQueryClient();
 
   const { data: part, isLoading, refetch } = useGetPartNumber(id, { query: { enabled: !!id, queryKey: getGetPartNumberQueryKey(id) } });
-  const { mutateAsync: decodePart } = useDecodePartNumber();
   const { mutateAsync: updatePart } = useUpdatePartNumber();
   const { mutateAsync: duplicatePart } = useDuplicatePartNumber();
   const { mutateAsync: deletePart } = useDeletePartNumber();
   const { mutateAsync: explainPart, isPending: isExplaining } = useExplainPartNumber();
 
-  const [decodedSegments, setDecodedSegments] = useState<any>(null);
-  const [isDecoding, setIsDecoding] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [explanation, setExplanation] = useState<AiExplainResponse | null>(null);
 
@@ -41,19 +38,6 @@ export default function PartDetail() {
       setExplanation(res);
     } catch (err) {
       toast({ title: "Explain failed", description: "Could not generate an explanation.", variant: "destructive" });
-    }
-  };
-
-  const handleDecode = async () => {
-    if (!part?.partNumber) return;
-    setIsDecoding(true);
-    try {
-      const res = await decodePart({ data: { partNumber: part.partNumber } });
-      setDecodedSegments(res.segments);
-    } catch (err) {
-      toast({ title: "Decode Error", description: "Failed to parse part number structure.", variant: "destructive" });
-    } finally {
-      setIsDecoding(false);
     }
   };
 
@@ -201,42 +185,47 @@ export default function PartDetail() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
+          {part.productDescription ? (
+            <Card className="shadow-sm">
+              <CardHeader className="py-4 bg-muted/20 border-b border-border">
+                <CardTitle className="text-lg flex items-center gap-2"><FileDigit className="w-5 h-5 text-primary" /> Description</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <p className="text-sm leading-7 text-foreground whitespace-pre-wrap">{part.productDescription}</p>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between py-4 bg-muted/20 border-b border-border">
-              <div>
-                <CardTitle className="text-lg flex items-center gap-2"><Settings2 className="w-5 h-5 text-primary" /> Structure Breakdown</CardTitle>
-                <CardDescription>Deconstructed segments of this part number.</CardDescription>
-              </div>
-              <Button variant="secondary" size="sm" onClick={handleDecode} disabled={isDecoding}>
-                {isDecoding ? "Analyzing..." : "Decode Structure"}
-              </Button>
+            <CardHeader className="py-4 bg-muted/20 border-b border-border">
+              <CardTitle className="text-lg flex items-center gap-2"><Settings2 className="w-5 h-5 text-primary" /> Structure Breakdown</CardTitle>
+              <CardDescription>Every segment that makes up this part number.</CardDescription>
             </CardHeader>
             <CardContent className="p-6">
-              {decodedSegments ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <SegmentDisplay label="Company" value={decodedSegments.company} />
-                  <SegmentDisplay label="Model" value={decodedSegments.productModel} />
-                  <SegmentDisplay label="Variant" value={decodedSegments.versionVariant} />
-                  <SegmentDisplay label="Size" value={decodedSegments.sizeVariant} />
-                  <SegmentDisplay label="Power Type" value={decodedSegments.powerType} />
-                  <SegmentDisplay label="Max Power" value={decodedSegments.maxPower} />
-                  <SegmentDisplay label="Voltage" value={decodedSegments.voltageRange} />
-                  <SegmentDisplay label="Dimming" value={decodedSegments.dimming} />
-                  <SegmentDisplay label="CCT" value={decodedSegments.cct} />
-                  <SegmentDisplay label="Distribution" value={decodedSegments.lightDistribution} />
-                  <SegmentDisplay label="Driver" value={decodedSegments.driver} />
-                  <SegmentDisplay label="Finish" value={decodedSegments.finish} />
-                  <SegmentDisplay label="Lens" value={decodedSegments.lensType} />
-                  <SegmentDisplay label="Sensor" value={decodedSegments.sensorOption} />
-                  <SegmentDisplay label="Emergency" value={decodedSegments.emergencyOption} />
-                  <SegmentDisplay label="Surge Prot" value={decodedSegments.surgeProtection} />
-                </div>
-              ) : (
-                <div className="py-12 flex flex-col items-center justify-center text-muted-foreground border-2 border-dashed border-border rounded-xl">
-                  <Settings2 className="w-12 h-12 mb-4 text-muted" />
-                  <p>Click "Decode Structure" to analyze segments.</p>
-                </div>
-              )}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <SegmentDisplay label="Company" value={part.company} />
+                <SegmentDisplay label="Model" value={part.productModel} />
+                <SegmentDisplay label="Variant" value={part.versionVariant} />
+                <SegmentDisplay label="Size" value={part.sizeVariant} />
+                <SegmentDisplay label="Power Type" value={part.powerType} />
+                <SegmentDisplay label="Max Power" value={part.maxPower} />
+                <SegmentDisplay label="Voltage" value={part.voltageRange} />
+                <SegmentDisplay label="Dimming" value={part.dimming} />
+                <SegmentDisplay label="CCT" value={part.cct} />
+                <SegmentDisplay label="Distribution" value={part.lightDistribution} />
+                <SegmentDisplay label="Driver" value={part.driver} />
+                <SegmentDisplay label="Finish" value={part.finish} />
+                <SegmentDisplay label="Manufacturer" value={part.manufacturer} />
+                <SegmentDisplay label="Lens" value={part.lensType} />
+                <SegmentDisplay label="Emergency" value={part.emergencyOption} />
+                <SegmentDisplay label="Sensor" value={part.sensorOption} />
+                <SegmentDisplay label="Surge Prot" value={part.surgeProtection} />
+                <SegmentDisplay label="Reflector" value={part.reflectorCover} />
+                <SegmentDisplay label="Mounting" value={part.mountingOption} />
+                <SegmentDisplay label="Photocontrol" value={part.photocontrolOption} />
+                <SegmentDisplay label="Connectable" value={part.connectableOption} />
+                <SegmentDisplay label="Base" value={part.base} />
+              </div>
             </CardContent>
           </Card>
 
