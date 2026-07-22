@@ -5,6 +5,9 @@ import { logAudit } from "../audit.js";
 
 const router = express.Router();
 
+// Scope the session cookie to the app's base path (e.g. /partpilot behind nginx).
+const COOKIE_PATH = process.env.SESSION_COOKIE_PATH || "/";
+
 router.post("/login", async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: "Username and password required" });
@@ -16,7 +19,7 @@ router.post("/login", async (req, res) => {
   res.cookie("sid", token, {
     httpOnly: true,
     sameSite: "lax",
-    path: "/",
+    path: COOKIE_PATH,
     maxAge: 1000 * 60 * 60 * 24 * 7,
   });
   req.user = user;
@@ -25,7 +28,7 @@ router.post("/login", async (req, res) => {
 });
 
 router.post("/logout", (req, res) => {
-  res.clearCookie("sid", { path: "/" });
+  res.clearCookie("sid", { path: COOKIE_PATH });
   res.json({ ok: true });
 });
 

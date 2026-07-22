@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Layout } from "../components/Layout";
-import { api } from "../lib/api";
+import { api, API_BASE } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { CORE_KEYS, OPTIONAL_KEYS } from "../lib/partNumber";
@@ -69,8 +69,8 @@ export default function ImportExport() {
           <h3 style={{ marginBottom: 6 }}>Export</h3>
           <p className="muted" style={{ marginTop: 0 }}>Download every part number in the registry.</p>
           <div className="flex wrap">
-            <a className="btn primary" href="/api/export/parts.csv">⬇ Export CSV</a>
-            <a className="btn" href="/api/export/parts.json">⬇ Export JSON</a>
+            <a className="btn primary" href={`${API_BASE}/export/parts.csv`}>⬇ Export CSV</a>
+            <a className="btn" href={`${API_BASE}/export/parts.json`}>⬇ Export JSON</a>
           </div>
         </div>
 

@@ -1,4 +1,7 @@
-const BASE = "/api";
+// Respects the Vite `base` so a subpath deploy (/partpilot/) hits /partpilot/api.
+// Dev: BASE_URL="/" -> "/api". Subpath: BASE_URL="/partpilot/" -> "/partpilot/api".
+export const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
+const BASE = API_BASE;
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(BASE + path, {

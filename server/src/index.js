@@ -2,7 +2,12 @@ import express from "express";
 import "express-async-errors"; // makes thrown async route errors reach the error handler instead of crashing
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import "dotenv/config";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import { pool } from "./db.js";
 import { seed } from "./seed.js";
@@ -47,6 +52,19 @@ app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api", importExportRoutes);
+
+// ─── Serve the built SPA in production (if client/dist exists) ───────────────
+// nginx proxies /partpilot/ -> this server with the prefix stripped, so the
+// app serves static assets at "/" and falls back to index.html for SPA routes.
+const clientDist = path.resolve(__dirname, "../../client/dist");
+if (fs.existsSync(path.join(clientDist, "index.html"))) {
+  app.use(express.static(clientDist));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api")) return next(); // unknown API path -> JSON 404 below
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+  console.log("✓ Serving built SPA from", clientDist);
+}
 
 // Error handler — return a clean message for DB/validation errors.
 app.use((err, _req, res, _next) => {

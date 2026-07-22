@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { StatusBadge, Spinner, Empty, Pager, useConfirm } from "../components/ui";
-import { api, qs } from "../lib/api";
+import { api, qs, API_BASE } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { PartNumber, Company, Category } from "../lib/types";
@@ -52,7 +52,7 @@ export default function Library() {
   return (
     <Layout title="Part Number Library" subtitle="View, search and manage all part numbers."
       actions={<>
-        <a className="btn" href="/api/export/parts.csv">⬇ Export CSV</a>
+        <a className="btn" href={`${API_BASE}/export/parts.csv`}>⬇ Export CSV</a>
         {can("write") && <button className="btn primary" onClick={() => nav("/builder")}>+ Create New Part Number</button>}
       </>}>
       <div className="card">
