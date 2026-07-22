@@ -25,12 +25,14 @@ import auditRoutes from "./routes/audit.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import aiRoutes from "./routes/ai.js";
 import importExportRoutes from "./routes/importExport.js";
+import uploadRoutes from "./routes/uploads.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: "5mb" }));
+// Larger limit so base64 file uploads (spec sheets / images) fit in the body.
+app.use(express.json({ limit: "30mb" }));
 app.use(cookieParser());
 app.use(attachUser);
 
@@ -51,6 +53,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/uploads", uploadRoutes);
 app.use("/api", importExportRoutes);
 
 // ─── Serve the built SPA in production (if client/dist exists) ───────────────

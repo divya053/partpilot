@@ -1,5 +1,7 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useRef, useState } from "react";
 import { Modal } from "./Modal";
+import { uploadFile, fileUrl } from "../lib/api";
+import { useToast } from "../lib/toast";
 
 export function StatusBadge({ status }: { status?: string }) {
   const s = (status || "").toLowerCase();
@@ -42,6 +44,58 @@ export function useConfirm() {
     </Modal>
   ) : null;
   return { confirm, node };
+}
+
+/** Upload-or-show file control. Stores the returned "uploads/…" ref via onChange. */
+export function FileUpload({
+  value, onChange, accept, image,
+}: { value?: string | null; onChange: (v: string) => void; accept?: string; image?: boolean }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const inputId = useRef(`fu-${Math.random().toString(36).slice(2)}`).current;
+
+  const pick = async (file?: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await uploadFile(file);
+      onChange(r.url);
+      toast("File uploaded", "success");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const url = fileUrl(value);
+  return (
+    <div className="file-upload">
+      {value ? (
+        <div className="flex" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {image
+            ? <img src={url} alt="preview" className="thumb" />
+            : <a href={url} target="_blank" rel="noreferrer" className="badge green">Open ↗</a>}
+          <a href={url} target="_blank" rel="noreferrer" className="muted" style={{ fontSize: 12, textDecoration: "underline", wordBreak: "break-all" }}>
+            {image ? "View image" : "View file"}
+          </a>
+          <button type="button" className="icon-btn danger" onClick={() => onChange("")} title="Remove">✕</button>
+        </div>
+      ) : (
+        <label className="btn" style={{ cursor: busy ? "wait" : "pointer" }} htmlFor={inputId}>
+          {busy ? "Uploading…" : image ? "⬆ Upload image" : "⬆ Upload file"}
+        </label>
+      )}
+      <input
+        id={inputId}
+        type="file"
+        accept={accept}
+        style={{ display: "none" }}
+        disabled={busy}
+        onChange={(e) => { void pick(e.target.files?.[0]); e.currentTarget.value = ""; }}
+      />
+    </div>
+  );
 }
 
 export function Pager({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (p: number) => void }) {

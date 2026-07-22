@@ -12,7 +12,7 @@ const camel = (s) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 // Fields the client may send (camelCase). Segment keys + product metadata.
 const META_FIELDS = [
   "productCategory", "productName", "sku", "productDescription", "internalNotes",
-  "vendorName", "productStage", "vendorSpecSheet", "ikioSpecSheet", "companyId",
+  "vendorName", "productStage", "vendorSpecSheet", "ikioSpecSheet", "image", "companyId",
   "status", "createdBy",
 ];
 const JSON_FIELDS = ["certificates"];
@@ -50,6 +50,42 @@ function pickWritable(body) {
 router.post("/generate", (req, res) => {
   const pn = buildPartNumber(req.body || {});
   res.json({ partNumber: pn, segments: partSegments(req.body || {}) });
+});
+
+// ─── Live duplicate + similarity check (no save) ─────────────────────────────
+// Powers the builder's red "already exists" alert and the "similar existing
+// part numbers" list (same product model / series). `excludeId` skips the part
+// being edited so it doesn't flag itself.
+router.post("/check", async (req, res) => {
+  const data = pickWritable(req.body || {});
+  const partNumber = buildPartNumber(data);
+  const excludeId = Number(req.body?.excludeId) || null;
+  const mapLite = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [camel(k), v]));
+
+  const existing = await one(
+    `SELECT id, part_number, product_name, status, created_by, created_at
+     FROM part_numbers WHERE part_number = ? ${excludeId ? "AND id != ?" : ""} LIMIT 1`,
+    excludeId ? [partNumber, excludeId] : [partNumber],
+  );
+
+  // Similar = same product model (series), most recent first.
+  const model = data.productModel || "";
+  let similar = [];
+  if (model) {
+    const params = [model];
+    let sql =
+      `SELECT p.id, p.part_number, p.product_name, p.status, p.product_category,
+              p.version_variant, p.size_variant, p.max_power, p.voltage_range,
+              p.image, p.created_at, c.name AS company_name
+       FROM part_numbers p LEFT JOIN companies c ON c.id = p.company_id
+       WHERE p.product_model = ?`;
+    if (excludeId) { sql += " AND p.id != ?"; params.push(excludeId); }
+    if (existing) { sql += " AND p.part_number != ?"; params.push(partNumber); }
+    sql += " ORDER BY p.id DESC LIMIT 12";
+    similar = (await q(sql, params)).map(mapLite);
+  }
+
+  res.json({ partNumber, duplicate: !!existing, existing: existing ? mapLite(existing) : null, similar });
 });
 
 // ─── List (search + filters + pagination) ────────────────────────────────────

@@ -15,6 +15,7 @@ const STATEMENTS = [
     certificates JSON,
     vendor_spec_sheet TEXT,
     ikio_spec_sheet TEXT,
+    image TEXT,
     company VARCHAR(32) NOT NULL DEFAULT 'IK',
     product_model VARCHAR(64) NOT NULL,
     version_variant VARCHAR(64) NOT NULL,
@@ -123,8 +124,25 @@ const STATEMENTS = [
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
+// MySQL has no portable "ADD COLUMN IF NOT EXISTS", so check information_schema
+// first. Lets new columns land on databases created before the column existed.
+async function ensureColumn(table, column, ddl) {
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column],
+  );
+  if (Number(rows[0]?.c || 0) === 0) {
+    await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN ${ddl}`);
+  }
+}
+
 export async function migrate() {
   for (const sql of STATEMENTS) {
     await pool.query(sql);
   }
+  // Additive columns for databases created before these fields existed.
+  await ensureColumn("part_numbers", "vendor_spec_sheet", "vendor_spec_sheet TEXT");
+  await ensureColumn("part_numbers", "ikio_spec_sheet", "ikio_spec_sheet TEXT");
+  await ensureColumn("part_numbers", "image", "image TEXT");
 }

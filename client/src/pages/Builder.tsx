@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
-import { Field, StatusBadge } from "../components/ui";
-import { api } from "../lib/api";
+import { Field, StatusBadge, FileUpload } from "../components/ui";
+import { api, fileUrl } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { buildPartNumber, partSegments } from "../lib/partNumber";
@@ -24,6 +24,7 @@ export default function Builder() {
   const [saving, setSaving] = useState(false);
   const [explain, setExplain] = useState<string>("");
   const [explaining, setExplaining] = useState(false);
+  const [showOptional, setShowOptional] = useState(false); // add-on segments start collapsed
 
   useEffect(() => {
     Promise.all([
@@ -51,6 +52,19 @@ export default function Builder() {
 
   const partNumber = useMemo(() => buildPartNumber(form), [form]);
   const chips = useMemo(() => partSegments(form), [form]);
+  const optionalCount = useMemo(() => (meta?.optional ?? []).filter((s) => form[s.key]).length, [meta, form]);
+
+  // Live duplicate + similarity check. Debounced; re-runs whenever the assembled
+  // number changes. `existing` drives the red alert; `similar` lists same-series parts.
+  const [dup, setDup] = useState<{ duplicate: boolean; existing: any; similar: any[] }>({ duplicate: false, existing: null, similar: [] });
+  useEffect(() => {
+    const t = setTimeout(() => {
+      api.post<{ duplicate: boolean; existing: any; similar: any[] }>("/part-numbers/check", { ...form, excludeId: id })
+        .then(setDup)
+        .catch(() => setDup({ duplicate: false, existing: null, similar: [] }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [partNumber, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const descFor = (segKey: string, code: string) =>
     values[segKey]?.find((v) => v.code === code)?.description || "";
@@ -112,15 +126,22 @@ export default function Builder() {
               </div>
 
               <div className="divider" />
-              <div className="muted" style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>
-                Optional add-on segments (appended after manufacturer)
-              </div>
-              <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-                {meta.optional.map((s) => renderSegment(s, true))}
-              </div>
+              <button type="button" onClick={() => setShowOptional((v) => !v)}
+                className="btn" style={{ width: "100%", justifyContent: "space-between", background: "transparent", borderStyle: "dashed" }}>
+                <span style={{ fontWeight: 600, fontSize: 12.5 }}>
+                  Optional add-on segments (appended after manufacturer)
+                  {optionalCount > 0 ? <span className="badge green" style={{ marginLeft: 8 }}>{optionalCount} selected</span> : null}
+                </span>
+                <span className="muted">{showOptional ? "Hide ▲" : "Show ▼"}</span>
+              </button>
+              {showOptional && (
+                <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", marginTop: 12 }}>
+                  {meta.optional.map((s) => renderSegment(s, true))}
+                </div>
+              )}
 
               <div className="divider" />
-              <div className="gen-code">
+              <div className={"gen-code" + (dup.duplicate ? " dupe" : "")}>
                 <div>
                   <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: .5 }}>Generated Part Number</div>
                   <div className="pn">{partNumber}</div>
@@ -128,6 +149,18 @@ export default function Builder() {
                 <button className="btn" onClick={copy}>⧉ Copy</button>
                 <button className="btn" onClick={reset}>Reset</button>
               </div>
+
+              {dup.duplicate && (
+                <div className="insight danger" style={{ marginTop: 12 }}>
+                  <div className="t" style={{ color: "var(--red)" }}>⚠ Duplicate part number</div>
+                  <div className="d">
+                    <span className="mono">{partNumber}</span> already exists
+                    {dup.existing?.productName ? <> as “{dup.existing.productName}”</> : null}
+                    {dup.existing?.createdBy ? <> (created by {dup.existing.createdBy})</> : null}.{" "}
+                    {dup.existing?.id ? <a className="link" onClick={() => nav(`/part/${dup.existing.id}`)} style={{ cursor: "pointer", textDecoration: "underline" }}>View existing part ↗</a> : null}
+                  </div>
+                </div>
+              )}
 
               <div className="seg-chips" style={{ marginTop: 14 }}>
                 {chips.map((c, i) => (
@@ -166,8 +199,15 @@ export default function Builder() {
                     <option value="temporary">Temporary</option>
                   </select>
                 </Field>
-                <Field label="Vendor Spec Sheet" hint="Link to the vendor's specification sheet"><input className="input" value={form.vendorSpecSheet ?? ""} onChange={(e) => set("vendorSpecSheet", e.target.value)} placeholder="https://…" /></Field>
-                <Field label="IKIO Spec Sheet" hint="Link to the IKIO specification sheet"><input className="input" value={form.ikioSpecSheet ?? ""} onChange={(e) => set("ikioSpecSheet", e.target.value)} placeholder="https://…" /></Field>
+                <Field label="Vendor Spec Sheet" hint="Upload the vendor's spec sheet (PDF / image / doc)">
+                  <FileUpload value={form.vendorSpecSheet} accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" onChange={(v) => set("vendorSpecSheet", v)} />
+                </Field>
+                <Field label="IKIO Spec Sheet" hint="Upload the IKIO spec sheet (PDF / image / doc)">
+                  <FileUpload value={form.ikioSpecSheet} accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" onChange={(v) => set("ikioSpecSheet", v)} />
+                </Field>
+                <Field label="Product Image" hint="Upload a product image for this part number">
+                  <FileUpload value={form.image} image accept="image/*" onChange={(v) => set("image", v)} />
+                </Field>
                 <Field label="Status">
                   <select className="select" value={form.status ?? "active"} onChange={(e) => set("status", e.target.value)}>
                     <option value="active">Active</option>
@@ -192,7 +232,7 @@ export default function Builder() {
               <div className="gen-code" style={{ marginBottom: 12 }}><div className="pn" style={{ fontSize: 15 }}>{partNumber}</div></div>
               {chips.map((c, i) => <div key={i} className="kv"><span className="k">{c.label}</span><span className="v mono">{c.value}</span></div>)}
               <div className="kv"><span className="k">Status</span><span className="v"><StatusBadge status={form.status} /></span></div>
-              {can("write") && <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={save} disabled={saving}>{saving ? "Saving…" : id ? "Update Part Number" : "Save Part Number"}</button>}
+              {can("write") && <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={save} disabled={saving || dup.duplicate} title={dup.duplicate ? "This part number already exists" : ""}>{saving ? "Saving…" : dup.duplicate ? "Duplicate — can't save" : id ? "Update Part Number" : "Save Part Number"}</button>}
             </div>
           </div>
 
@@ -207,6 +247,54 @@ export default function Builder() {
           </div>
         </div>
       </div>
+
+      {/* Similar existing part numbers — same series, shown as a library-style table */}
+      {dup.similar.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-head">
+            <div>
+              <h3>Similar Part Numbers</h3>
+              <div className="sub">Existing parts in the same series ({form.productModel}) — {dup.similar.length} found</div>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: 64 }}>Image</th>
+                  <th>Part Number</th>
+                  <th>Product</th>
+                  <th>Company</th>
+                  <th>Status</th>
+                  <th>Created On</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dup.similar.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      {s.image
+                        ? <img src={fileUrl(s.image)} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }} />
+                        : <span className="muted">—</span>}
+                    </td>
+                    <td><span className="mono" style={{ fontWeight: 600 }}>{s.partNumber}</span></td>
+                    <td>{s.productName || "—"}</td>
+                    <td className="muted">{s.companyName || "—"}</td>
+                    <td><StatusBadge status={s.status} /></td>
+                    <td className="muted">{s.createdAt ? new Date(s.createdAt).toLocaleDateString() : "—"}</td>
+                    <td>
+                      <div className="actions-cell" style={{ justifyContent: "flex-end" }}>
+                        <button className="btn sm" onClick={() => nav(`/part/${s.id}`)}>View</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

@@ -43,6 +43,7 @@ export interface PartNumber {
   productStage?: string | null;
   vendorSpecSheet?: string | null;
   ikioSpecSheet?: string | null;
+  image?: string | null;
   companyId?: number | null;
   company_name?: string | null;
   status: string;

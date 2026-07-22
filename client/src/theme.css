@@ -156,6 +156,14 @@ table.tbl .actions-cell { display: flex; gap: 4px; }
   border-radius: 10px; padding: 16px 18px;
 }
 .gen-code .pn { font-size: 20px; font-weight: 700; color: var(--green-dark); letter-spacing: .3px; flex: 1; word-break: break-all; }
+.gen-code.dupe { background: var(--red-bg); border-color: var(--red); }
+.gen-code.dupe .pn { color: var(--red); }
+
+/* ─── Duplicate / danger insight + upload media ─────────────── */
+.insight.danger { border-left-color: var(--red); background: var(--red-bg); }
+.file-upload { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.thumb { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.thumb-lg { max-width: 220px; max-height: 180px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: #fff; }
 
 /* ─── Toast ─────────────────────────────────────────────────── */
 .toast-wrap { position: fixed; bottom: 22px; right: 22px; z-index: 100; display: flex; flex-direction: column; gap: 10px; }

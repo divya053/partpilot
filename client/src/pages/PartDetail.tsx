@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { StatusBadge, Spinner, useConfirm } from "../components/ui";
-import { api } from "../lib/api";
+import { api, fileUrl } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { PartNumber } from "../lib/types";
@@ -87,9 +87,17 @@ export default function PartDetail() {
             {part.internalNotes && <div style={{ marginTop: 12 }}><div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Internal Notes</div><div className="muted">{part.internalNotes}</div></div>}
 
             <div className="divider" />
-            <h3 style={{ marginBottom: 8, fontSize: 14 }}>Spec Sheets</h3>
-            <div className="kv"><span className="k">Vendor Spec Sheet</span><span className="v">{part.vendorSpecSheet ? <a href={String(part.vendorSpecSheet)} target="_blank" className="badge blue">Open ↗</a> : "—"}</span></div>
-            <div className="kv"><span className="k">IKIO Spec Sheet</span><span className="v">{part.ikioSpecSheet ? <a href={String(part.ikioSpecSheet)} target="_blank" className="badge green">Open ↗</a> : "—"}</span></div>
+            <h3 style={{ marginBottom: 8, fontSize: 14 }}>Spec Sheets & Media</h3>
+            <div className="kv"><span className="k">Vendor Spec Sheet</span><span className="v">{part.vendorSpecSheet ? <a href={fileUrl(String(part.vendorSpecSheet))} target="_blank" rel="noreferrer" className="badge blue">Open ↗</a> : "—"}</span></div>
+            <div className="kv"><span className="k">IKIO Spec Sheet</span><span className="v">{part.ikioSpecSheet ? <a href={fileUrl(String(part.ikioSpecSheet))} target="_blank" rel="noreferrer" className="badge green">Open ↗</a> : "—"}</span></div>
+            {part.image && (
+              <div style={{ marginTop: 12 }}>
+                <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Product Image</div>
+                <a href={fileUrl(String(part.image))} target="_blank" rel="noreferrer">
+                  <img src={fileUrl(String(part.image))} alt={part.productName} className="thumb-lg" />
+                </a>
+              </div>
+            )}
           </div>
 
           <div className="card card-pad" style={{ flex: 1 }}>
