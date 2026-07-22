@@ -76,53 +76,6 @@ router.post("/values", requireCap("write"), async (req, res) => {
   res.status(201).json(parse(row));
 });
 
-// Bulk upload segment values. Upserts by (segmentKey, code): existing rows are
-// updated, new ones inserted. Accepts camelCase or snake_case keys so a CSV
-// exported from anywhere maps cleanly. applicableProducts may be an array or a
-// pipe/comma/semicolon-delimited string.
-router.post("/values/bulk", requireCap("write"), async (req, res) => {
-  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-  if (!rows.length) return res.status(400).json({ error: "No rows provided" });
-
-  let created = 0, updated = 0;
-  const errors = [];
-  for (const [idx, r] of rows.entries()) {
-    try {
-      const segmentKey = String(r.segmentKey ?? r.segment_key ?? "").trim();
-      const code = String(r.code ?? "").trim();
-      if (!segmentKey || !code) { errors.push({ row: idx + 1, error: "segmentKey and code are required" }); continue; }
-
-      const description = (String(r.description ?? "").trim()) || code;
-      const sortOrder = Number(r.sortOrder ?? r.sort_order ?? 0) || 0;
-      const rawActive = r.isActive ?? r.is_active ?? true;
-      const isActive = (rawActive === false || rawActive === 0 || rawActive === "0" || String(rawActive).toLowerCase() === "false") ? 0 : 1;
-
-      let applicable = r.applicableProducts ?? r.applicable_products ?? [];
-      if (typeof applicable === "string") applicable = applicable.split(/[|,;]/).map((s) => s.trim()).filter(Boolean);
-      if (!Array.isArray(applicable)) applicable = [];
-
-      const existing = await one("SELECT id FROM segment_values WHERE segment_key = ? AND code = ?", [segmentKey, code]);
-      if (existing) {
-        await pool.query(
-          "UPDATE segment_values SET description = ?, applicable_products = ?, sort_order = ?, is_active = ? WHERE id = ?",
-          [description, JSON.stringify(applicable), sortOrder, isActive, existing.id],
-        );
-        updated++;
-      } else {
-        await pool.query(
-          "INSERT INTO segment_values (segment_key, code, description, applicable_products, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?)",
-          [segmentKey, code, description, JSON.stringify(applicable), sortOrder, isActive],
-        );
-        created++;
-      }
-    } catch (err) {
-      errors.push({ row: idx + 1, error: err.message });
-    }
-  }
-  await logAudit(req, "Segment", "Imported", `Bulk upload: ${created} added, ${updated} updated`);
-  res.json({ created, updated, errors });
-});
-
 router.patch("/values/:id", requireCap("write"), async (req, res) => {
   const allowed = ["code", "description", "sortOrder", "isActive", "applicableProducts"];
   const colMap = { sortOrder: "sort_order", isActive: "is_active", applicableProducts: "applicable_products" };

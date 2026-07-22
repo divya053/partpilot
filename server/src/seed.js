@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { pool, q, one } from "./db.js";
 import { migrate } from "./migrate.js";
 import { hashPassword } from "./auth.js";
+import { recomputeUsage } from "./usage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const seedData = JSON.parse(
@@ -163,6 +164,9 @@ export async function seed() {
   results.push(await seedTemplates());
   results.push(await seedUsers());
   results.push(await seedPartNumbers());
+  // Auto-detect "Used By" from real parts (also restores it if a bulk upload
+  // had blanked applicable_products).
+  results.push(`recomputed Used By for ${await recomputeUsage()} segment values`);
   return results;
 }
 
