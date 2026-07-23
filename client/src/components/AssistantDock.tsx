@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 
-type Msg = { role: "user" | "bot"; text: string };
+type Msg = { role: "user" | "bot"; text: string; source?: string };
 
 const QUICK_QUESTIONS = [
   "How are part numbers created?",
@@ -17,11 +17,19 @@ export function AssistantDock() {
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiOn, setAiOn] = useState<boolean | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [msgs, busy]);
+
+  // Show whether a real AI provider is connected so "is my key working?" is
+  // answerable at a glance. Re-checked each time the panel opens.
+  useEffect(() => {
+    if (!open) return;
+    api.get<{ enabled: boolean }>("/ai/status").then((r) => setAiOn(r.enabled)).catch(() => setAiOn(false));
+  }, [open]);
 
   const ask = async (question: string) => {
     const q = question.trim();
@@ -30,8 +38,8 @@ export function AssistantDock() {
     setInput("");
     setBusy(true);
     try {
-      const res = await api.post<{ answer: string }>("/ai/ask", { question: q });
-      setMsgs((m) => [...m, { role: "bot", text: res.answer }]);
+      const res = await api.post<{ answer: string; source?: string }>("/ai/ask", { question: q });
+      setMsgs((m) => [...m, { role: "bot", text: res.answer, source: res.source }]);
     } catch {
       setMsgs((m) => [...m, { role: "bot", text: "Sorry, I couldn't answer that right now." }]);
     } finally {
@@ -50,12 +58,23 @@ export function AssistantDock() {
             <span className="avatar" style={{ width: 28, height: 28, fontSize: 13 }}>✦</span>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>PartPilot Assistant</div>
-              <div className="muted" style={{ fontSize: 11 }}>Advisory · answers from your registry data</div>
+              <div className="muted" style={{ fontSize: 11 }}>
+                {aiOn === null ? "Advisory · answers from your registry data"
+                  : aiOn ? <>Advisory · <span style={{ color: "var(--green-dark)", fontWeight: 600 }}>✦ AI connected</span></>
+                  : <>Advisory · <span className="badge amber" style={{ fontSize: 10 }}>data-only — no AI key loaded</span></>}
+              </div>
             </div>
           </div>
           <div className="ai-msgs">
             {msgs.map((m, i) => (
-              <div key={i} className={`ai-msg ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+              <div key={i} className={`ai-msg ${m.role}`} style={{ whiteSpace: "pre-wrap" }}>
+                {m.text}
+                {m.role === "bot" && m.source ? (
+                  <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
+                    {m.source === "ai" ? "✦ answered by AI" : "📊 from registry data"}
+                  </div>
+                ) : null}
+              </div>
             ))}
             {busy && <div className="ai-msg bot"><span className="spinner" style={{ width: 14, height: 14 }} /></div>}
             <div ref={endRef} />
