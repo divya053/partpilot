@@ -15,16 +15,39 @@ interface DashData {
 }
 interface Insight { type: string; title: string; detail: string; }
 
+type Decoded = {
+  partNumber: string;
+  found: boolean;
+  productName?: string;
+  status?: string;
+  id?: number;
+  segments: { key: string; label: string; code: string; description: string }[];
+};
+
 export default function Dashboard() {
   const nav = useNavigate();
   const { user } = useAuth();
   const [data, setData] = useState<DashData | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
+  const [decodeInput, setDecodeInput] = useState("");
+  const [decoded, setDecoded] = useState<Decoded | null>(null);
+  const [decoding, setDecoding] = useState(false);
 
   useEffect(() => {
     api.get<DashData>("/dashboard").then(setData).catch(() => {});
     api.get<{ insights: Insight[] }>("/ai/insights").then((r) => setInsights(r.insights)).catch(() => {});
   }, []);
+
+  const decode = async () => {
+    const pn = decodeInput.trim();
+    if (!pn || decoding) return;
+    setDecoding(true);
+    setDecoded(null);
+    try {
+      setDecoded(await api.post<Decoded>("/ai/decode", { partNumber: pn }));
+    } catch { setDecoded({ partNumber: pn, found: false, segments: [] }); }
+    finally { setDecoding(false); }
+  };
 
   if (!data) return <Layout title="Dashboard"><Spinner /></Layout>;
   const s = data.stats;
@@ -51,6 +74,60 @@ export default function Dashboard() {
             <div className="v">{t.v}</div>
           </div>
         ))}
+      </div>
+
+      {/* Decode any part number — from a label, an email, a legacy sheet… */}
+      <div className="card card-pad" style={{ marginBottom: 20 }}>
+        <h3 style={{ marginBottom: 4 }}>🔍 Decode a Part Number</h3>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+          Paste any part number to see what each segment means — works even if it isn't in the registry yet.
+        </div>
+        <div className="flex" style={{ gap: 8 }}>
+          <input className="input mono" style={{ flex: 1 }} placeholder="e.g. IK-UHB3-02-S0240-MV-D-CCT-WD-01-BK-BFU"
+            value={decodeInput} onChange={(e) => setDecodeInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && decode()} />
+          <button className="btn primary" onClick={decode} disabled={decoding || !decodeInput.trim()}>
+            {decoding ? "Decoding…" : "Decode"}
+          </button>
+        </div>
+        {decoded && (
+          <div style={{ marginTop: 14 }}>
+            {decoded.segments.length === 0 ? (
+              <div className="insight warning"><div className="d">Couldn't decode “{decoded.partNumber}” — check the format.</div></div>
+            ) : (
+              <>
+                <div className="spread" style={{ marginBottom: 10 }}>
+                  <span className="mono" style={{ fontWeight: 700 }}>{decoded.partNumber}</span>
+                  {decoded.found
+                    ? <span className="flex" style={{ gap: 8 }}>
+                        <StatusBadge status={decoded.status} />
+                        <button className="btn sm" onClick={() => nav(`/part/${decoded.id}`)}>Open “{decoded.productName}” ↗</button>
+                      </span>
+                    : <span className="badge amber">Not in registry — best-effort decode</span>}
+                </div>
+                <div className="seg-chips">
+                  {decoded.segments.map((c, i) => (
+                    <div key={i} className="flex" style={{ gap: 6 }}>
+                      <div className="seg-chip" title={c.description}>
+                        <div className="code">{c.code}</div>
+                        <div className="lab">{c.label}</div>
+                      </div>
+                      {i < decoded.segments.length - 1 && <div className="seg-sep">–</div>}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid" style={{ gap: 4, marginTop: 10 }}>
+                  {decoded.segments.map((c, i) => (
+                    <div key={i} className="kv" style={{ padding: "3px 0" }}>
+                      <span className="k">{c.label} · <span className="mono">{c.code}</span></span>
+                      <span className="v">{c.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="row" style={{ alignItems: "flex-start", marginBottom: 20 }}>

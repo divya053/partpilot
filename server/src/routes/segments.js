@@ -3,6 +3,7 @@ import { pool, q, one } from "../db.js";
 import { requireCap } from "../auth.js";
 import { logAudit } from "../audit.js";
 import { CORE_SEGMENTS, OPTIONAL_SEGMENTS, ALL_SEGMENTS } from "../segments.js";
+import { SEGMENT_COLUMNS } from "../usage.js";
 
 const router = express.Router();
 
@@ -18,14 +19,28 @@ router.get("/meta", (_req, res) => {
   res.json({ core: CORE_SEGMENTS, optional: OPTIONAL_SEGMENTS, all: ALL_SEGMENTS });
 });
 
-// All values grouped by segmentKey (for the builder dropdowns)
+// All values grouped by segmentKey (for the builder dropdowns), ranked by how
+// often each code is actually used in the registry — common choices surface
+// first, so new users see the "normal" options at the top of every dropdown.
 router.get("/values/grouped", async (_req, res) => {
   const rows = await q(
     "SELECT * FROM segment_values WHERE is_active = 1 ORDER BY segment_key, sort_order, code",
   );
+  const usage = new Map();
+  for (const [key, col] of Object.entries(SEGMENT_COLUMNS)) {
+    const counts = await q(
+      `SELECT \`${col}\` AS code, COUNT(*) AS c FROM part_numbers
+       WHERE \`${col}\` IS NOT NULL AND \`${col}\` <> '' GROUP BY \`${col}\``,
+    );
+    for (const r of counts) usage.set(`${key}:${r.code}`, Number(r.c));
+  }
   const grouped = {};
   for (const r of rows.map(parse)) {
+    r.usage_count = usage.get(`${r.segment_key}:${r.code}`) || 0;
     (grouped[r.segment_key] ||= []).push(r);
+  }
+  for (const list of Object.values(grouped)) {
+    list.sort((a, b) => (b.usage_count - a.usage_count) || (a.sort_order - b.sort_order) || a.code.localeCompare(b.code));
   }
   res.json(grouped);
 });

@@ -4,7 +4,7 @@ import { pool, q } from "./db.js";
 // auto-detect "Used By" (applicable_products) from the parts that actually use
 // each code. Keys are hardcoded here — never user input — so interpolating the
 // column name into SQL is safe.
-const SEGMENT_COLUMNS = {
+export const SEGMENT_COLUMNS = {
   company: "company",
   productModel: "product_model",
   versionVariant: "version_variant",

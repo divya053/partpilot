@@ -1,7 +1,7 @@
 import express from "express";
 import { q } from "../db.js";
 import { aiEnabled, chat, computeInsights } from "../ai.js";
-import { buildAskContext } from "../assistant.js";
+import { buildAskContext, computeSuggestions, parseDescription, decodePartNumber } from "../assistant.js";
 import { buildPartNumber, ALL_SEGMENTS } from "../segments.js";
 
 const router = express.Router();
@@ -14,6 +14,25 @@ router.get("/status", (_req, res) => {
 router.get("/insights", async (_req, res) => {
   const base = await computeInsights();
   res.json(base);
+});
+
+// Smart defaults + unusual-combination warnings, learned from existing parts.
+router.post("/suggest", async (req, res) => {
+  res.json(await computeSuggestions(req.body || {}));
+});
+
+// Plain-English description → segment codes (validated against the catalog).
+router.post("/parse", async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !String(text).trim()) return res.status(400).json({ error: "text required" });
+  res.json(await parseDescription(String(text)));
+});
+
+// Decode any part number — known (from the registry) or unknown (positional).
+router.post("/decode", async (req, res) => {
+  const { partNumber } = req.body || {};
+  if (!partNumber || !String(partNumber).trim()) return res.status(400).json({ error: "partNumber required" });
+  res.json(await decodePartNumber(String(partNumber)));
 });
 
 // Explain a part number in plain English

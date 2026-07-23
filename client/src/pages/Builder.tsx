@@ -66,6 +66,45 @@ export default function Builder() {
     return () => clearTimeout(t);
   }, [partNumber, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Smart defaults + unusual-combination warnings, learned from existing parts
+  // in the selected series. Pure statistics — improves with every saved part.
+  type Suggestion = { key: string; label: string; code: string; count: number; share: number };
+  type Warning = { key: string; label: string; code: string; message: string };
+  const [sugg, setSugg] = useState<{ basisCount: number; suggestions: Suggestion[]; warnings: Warning[] }>({ basisCount: 0, suggestions: [], warnings: [] });
+  useEffect(() => {
+    if (!form.productModel) { setSugg({ basisCount: 0, suggestions: [], warnings: [] }); return; }
+    const t = setTimeout(() => {
+      api.post<typeof sugg>("/ai/suggest", form)
+        .then(setSugg)
+        .catch(() => setSugg({ basisCount: 0, suggestions: [], warnings: [] }));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [partNumber]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Plain-English description → auto-filled segments.
+  const [describe, setDescribe] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const autoFill = async () => {
+    if (!describe.trim() || parsing) return;
+    setParsing(true);
+    try {
+      const res = await api.post<{ fields: Record<string, string>; source: string }>("/ai/parse", { text: describe });
+      const n = Object.keys(res.fields).length;
+      if (!n) { toast("Couldn't match any segments — try mentioning wattage, colour, voltage…", "error"); return; }
+      setForm((f) => ({ ...f, ...res.fields }));
+      toast(`Filled ${n} segment(s) from your description${res.source === "ai" ? "" : " (keyword match)"}`, "success");
+    } catch (e) { toast((e as Error).message, "error"); }
+    finally { setParsing(false); }
+  };
+  const applyAllSuggestions = () => {
+    setForm((f) => {
+      const next = { ...f };
+      for (const s of sugg.suggestions) if (!next[s.key]) next[s.key] = s.code;
+      return next;
+    });
+    toast("Applied the most common values for this series", "success");
+  };
+
   const descFor = (segKey: string, code: string) =>
     values[segKey]?.find((v) => v.code === code)?.description || "";
 
@@ -121,9 +160,43 @@ export default function Builder() {
           <div className="card">
             <div className="card-head"><span className="step-badge">1</span><div><h3>Configure Your Part Number</h3><div className="sub">Select options for each attribute to build your part number.</div></div></div>
             <div className="card-pad">
+              {/* Plain-English auto-fill — describe the fixture, AI maps it to real codes */}
+              <div className="flex" style={{ gap: 8, marginBottom: 6 }}>
+                <input className="input" style={{ flex: 1 }}
+                  placeholder='✨ Describe it in plain English — e.g. "240W UFO high bay, black, dimmable, 120-277V, motion sensor"'
+                  value={describe}
+                  onChange={(e) => setDescribe(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && autoFill()} />
+                <button className="btn primary" onClick={autoFill} disabled={parsing || !describe.trim()}>
+                  {parsing ? "Matching…" : "✨ Auto-fill"}
+                </button>
+              </div>
+              <div className="muted" style={{ fontSize: 11.5, marginBottom: 12 }}>
+                Only real catalog codes are used — review the dropdowns after auto-fill.
+              </div>
+
               <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
                 {meta.core.map((s) => renderSegment(s))}
               </div>
+
+              {/* Learned suggestions: most common values among this series' parts */}
+              {sugg.suggestions.length > 0 && (
+                <div className="insight info" style={{ marginTop: 12 }}>
+                  <div className="spread">
+                    <div className="t">Suggestions from {sugg.basisCount} existing {form.productModel} part(s)</div>
+                    <button className="btn sm" onClick={applyAllSuggestions}>Apply all</button>
+                  </div>
+                  <div className="flex" style={{ flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {sugg.suggestions.map((s) => (
+                      <button key={s.key} className="btn sm" title={`Used by ${s.count} of ${sugg.basisCount} parts — click to apply`}
+                        onClick={() => set(s.key, s.code)}>
+                        {s.label}: <span className="mono" style={{ fontWeight: 700 }}>{s.code}</span>
+                        <span className="muted" style={{ fontSize: 10.5 }}> {s.share}%</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="divider" />
               <button type="button" onClick={() => setShowOptional((v) => !v)}
@@ -158,6 +231,15 @@ export default function Builder() {
                     {dup.existing?.productName ? <> as “{dup.existing.productName}”</> : null}
                     {dup.existing?.createdBy ? <> (created by {dup.existing.createdBy})</> : null}.{" "}
                     {dup.existing?.id ? <a className="link" onClick={() => nav(`/part/${dup.existing.id}`)} style={{ cursor: "pointer", textDecoration: "underline" }}>View existing part ↗</a> : null}
+                  </div>
+                </div>
+              )}
+
+              {sugg.warnings.length > 0 && (
+                <div className="insight warning" style={{ marginTop: 12 }}>
+                  <div className="t">Unusual for this series — double-check</div>
+                  <div className="d">
+                    {sugg.warnings.map((w) => <div key={w.key}>• {w.message}</div>)}
                   </div>
                 </div>
               )}

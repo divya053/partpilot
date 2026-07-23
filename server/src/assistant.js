@@ -1,8 +1,203 @@
 import { q, one } from "./db.js";
 import { CORE_SEGMENTS, OPTIONAL_SEGMENTS } from "./segments.js";
+import { aiEnabled, chat } from "./ai.js";
 
 const ALL = [...CORE_SEGMENTS, ...OPTIONAL_SEGMENTS];
 const snake = (s) => s.replace(/[A-Z]/g, (m) => "_" + m.toLowerCase());
+
+async function loadSegValues(activeOnly = false) {
+  const rows = await q(
+    `SELECT segment_key, code, description FROM segment_values ${activeOnly ? "WHERE is_active = 1" : ""}`,
+  );
+  return rows.map((v) => ({ ...v, segment_key: camelKey(v.segment_key) }));
+}
+
+// ─── Smart defaults + unusual-combination warnings ───────────────────────────
+// Learns from the registry itself: given the current draft, look at all parts
+// in the same series (product model) and (a) suggest the most common value for
+// each still-empty segment, (b) flag chosen values that are rare or unseen in
+// that series. Pure SQL statistics — improves automatically with every part.
+export async function computeSuggestions(draft = {}) {
+  const model = String(draft.productModel || "").trim();
+  const parts = model
+    ? await q("SELECT * FROM part_numbers WHERE product_model = ?", [model])
+    : await q("SELECT * FROM part_numbers");
+  const basisCount = parts.length;
+  const suggestions = [];
+  const warnings = [];
+  if (!basisCount) return { basisCount, scope: model || "all", suggestions, warnings };
+
+  for (const s of ALL) {
+    if (s.key === "productModel" || s.key === "company") continue;
+    const col = snake(s.key);
+    const freq = new Map();
+    for (const p of parts) {
+      const v = p[col];
+      if (v == null || v === "") continue;
+      freq.set(v, (freq.get(v) || 0) + 1);
+    }
+
+    const chosen = String(draft[s.key] || "").trim();
+    if (chosen) {
+      const cnt = freq.get(chosen) || 0;
+      if (basisCount >= 5 && cnt === 0) {
+        warnings.push({ key: s.key, label: s.label, code: chosen,
+          message: `${s.label} "${chosen}" has never been used in the ${model || "registry"} series (${basisCount} existing parts) — double-check it.` });
+      } else if (basisCount >= 8 && cnt / basisCount < 0.1) {
+        warnings.push({ key: s.key, label: s.label, code: chosen,
+          message: `${s.label} "${chosen}" is unusual for this series — only ${cnt} of ${basisCount} parts use it.` });
+      }
+    } else if (freq.size) {
+      const [top, cnt] = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
+      const share = cnt / basisCount;
+      const isOptional = OPTIONAL_SEGMENTS.some((o) => o.key === s.key);
+      // Only push optional add-ons when the series genuinely tends to use them.
+      if (!isOptional || share >= 0.5) {
+        suggestions.push({ key: s.key, label: s.label, code: top, count: cnt, share: Math.round(share * 100) });
+      }
+    }
+  }
+  return { basisCount, scope: model || "all", suggestions, warnings };
+}
+
+// ─── Plain-English → segment codes ───────────────────────────────────────────
+// Deterministic matcher first (works with no AI key): match wattage patterns
+// and each catalog value's description/code against the text. When an LLM is
+// configured it refines the mapping, but every code it returns is validated
+// against the real catalog — it can never invent one.
+export async function parseDescription(text) {
+  const segValues = await loadSegValues(true);
+  const byKey = new Map();
+  for (const v of segValues) {
+    if (!byKey.has(v.segment_key)) byKey.set(v.segment_key, []);
+    byKey.get(v.segment_key).push(v);
+  }
+
+  const fields = {};
+  const lower = ` ${String(text).toLowerCase()} `;
+
+  // Wattage: "240W", "240 watt" → maxPower code with the same numeric value.
+  const wm = String(text).match(/(\d{2,4})\s*w(att)?s?\b/i);
+  if (wm) {
+    const watts = Number(wm[1]);
+    const hit = (byKey.get("maxPower") || []).find((v) => Number(v.code) === watts);
+    if (hit) fields.maxPower = hit.code;
+  }
+
+  // Description/code containment, longest description wins per segment.
+  for (const s of ALL) {
+    if (fields[s.key]) continue;
+    let best = null;
+    for (const v of byKey.get(s.key) || []) {
+      const desc = String(v.description || "").toLowerCase();
+      if (desc.length >= 3 && lower.includes(desc)) {
+        if (!best || desc.length > best.len) best = { code: v.code, len: desc.length };
+        continue;
+      }
+      // Word-level: any 4+ char word of the description present in the text
+      const words = desc.split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+      if (words.length && words.every((w) => lower.includes(w))) {
+        const len = words.join(" ").length;
+        if (!best || len > best.len) best = { code: v.code, len };
+        continue;
+      }
+      if (v.code.length >= 2 && new RegExp(`\\b${v.code.toLowerCase()}\\b`).test(lower)) {
+        if (!best || v.code.length > best.len) best = { code: v.code, len: v.code.length };
+      }
+    }
+    if (best) fields[s.key] = best.code;
+  }
+
+  if (!aiEnabled()) return { fields, source: "deterministic" };
+
+  // LLM refinement over the SAME catalog, strictly validated.
+  try {
+    const catalog = ALL.map((s) => {
+      const vals = (byKey.get(s.key) || []).map((v) => `${v.code}=${v.description}`).join(" | ");
+      return `${s.key} (${s.label}): ${vals}`;
+    }).join("\n");
+    const raw = await chat([
+      { role: "system", content: "You map fixture descriptions to IKIO part-number segment codes. Respond with ONLY a JSON object of segmentKey: code pairs. Use ONLY codes present in the catalog. Omit segments the description doesn't mention." },
+      { role: "user", content: `Catalog:\n${catalog}\n\nDescription: ${text}\n\nJSON:` },
+    ], { temperature: 0 });
+    const cleaned = raw.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf("{"), cleaned.lastIndexOf("}") + 1));
+    const validated = {};
+    for (const [k, val] of Object.entries(parsed)) {
+      const seg = ALL.find((s) => s.key === k);
+      if (!seg) continue;
+      const hit = (byKey.get(k) || []).find((v) => v.code.toUpperCase() === String(val).toUpperCase());
+      if (hit) validated[k] = hit.code;
+    }
+    // LLM result wins where it found something; deterministic fills the gaps.
+    return { fields: { ...fields, ...validated }, source: "ai" };
+  } catch {
+    return { fields, source: "deterministic" };
+  }
+}
+
+// ─── Decode any part number (known or not) ───────────────────────────────────
+export async function decodePartNumber(input) {
+  const pn = String(input || "").trim().toUpperCase();
+  if (!pn) return { partNumber: pn, found: false, segments: [] };
+  const segValues = await loadSegValues(false);
+  const descLookup = new Map(segValues.map((v) => [`${v.segment_key}:${v.code}`, v.description]));
+  const desc = (key, code) => descLookup.get(`${key}:${code}`) || code;
+
+  const row = await one("SELECT * FROM part_numbers WHERE part_number = ?", [pn]);
+  if (row) {
+    const segments = [];
+    for (const s of ALL) {
+      const code = row[snake(s.key)];
+      if (!code) continue;
+      segments.push({ key: s.key, label: s.label, code, description: desc(s.key, code) });
+    }
+    return { partNumber: pn, found: true, productName: row.product_name, status: row.status, createdBy: row.created_by, id: row.id, segments };
+  }
+
+  // Positional parse for numbers not in the registry.
+  const tokens = pn.split("-").filter(Boolean);
+  const segments = [];
+  const push = (key, label, code) => segments.push({ key, label, code, description: desc(key, code) });
+  if (tokens.length >= 4) {
+    push("company", "Company", tokens[0]);
+    const modelCodes = segValues.filter((v) => v.segment_key === "productModel").map((v) => v.code)
+      .sort((a, b) => b.length - a.length);
+    const mv = tokens[1] || "";
+    const model = modelCodes.find((m) => mv.startsWith(m));
+    if (model) {
+      push("productModel", "Product Model", model);
+      if (mv.length > model.length) push("versionVariant", "Version / Variant", mv.slice(model.length));
+    } else if (mv) push("productModel", "Product Model", mv);
+    const rest = tokens.slice(2);
+    const coreOrder = [
+      ["sizeVariant", "Size Variant"], ["__power__", "Power"], ["voltageRange", "Voltage Range"],
+      ["dimming", "Dimming"], ["cct", "CCT"], ["lightDistribution", "Light Distribution"],
+      ["driver", "Driver"], ["finish", "Finish"], ["manufacturer", "Manufacturer"],
+    ];
+    let i = 0;
+    for (const [key, label] of coreOrder) {
+      if (i >= rest.length) break;
+      const tok = rest[i++];
+      if (key === "__power__") {
+        const m = tok.match(/^([FS])(\d+)$/);
+        if (m) { push("powerType", "Power Type", m[1]); push("maxPower", "Max Power", m[2]); }
+        else push("maxPower", "Power", tok);
+      } else push(key, label, tok);
+    }
+    // Remaining tokens = optional add-ons; find which optional segment owns each code.
+    for (; i < rest.length; i++) {
+      const tok = rest[i];
+      const ownerVal = segValues.find(
+        (v) => v.code === tok && OPTIONAL_SEGMENTS.some((o) => o.key === v.segment_key),
+      );
+      const ownerSeg = ownerVal ? OPTIONAL_SEGMENTS.find((o) => o.key === ownerVal.segment_key) : null;
+      if (ownerSeg) push(ownerSeg.key, ownerSeg.label, tok);
+      else segments.push({ key: "addon", label: "Add-on", code: tok, description: tok });
+    }
+  }
+  return { partNumber: pn, found: false, segments };
+}
 
 /**
  * Retrieval layer for the assistant. Looks at the question, pulls the relevant
@@ -22,18 +217,13 @@ export async function buildAskContext(question) {
   // ── 1. Part numbers mentioned in the question → decode from the registry ──
   const pnTokens = [...new Set(text.toUpperCase().match(/[A-Z0-9]+(?:-[A-Z0-9]+){3,}/g) || [])].slice(0, 3);
   for (const pn of pnTokens) {
-    const row = await one("SELECT * FROM part_numbers WHERE part_number = ?", [pn]);
-    if (row) {
-      const lines = [];
-      for (const s of ALL) {
-        const code = row[snake(s.key)];
-        if (!code) continue;
-        lines.push(`  • ${s.label}: ${code} — ${descLookup.get(`${s.key}:${code}`) || code}`);
-      }
-      sections.push(`${pn} — "${row.product_name}" (${row.status}, created by ${row.created_by || "unknown"}):\n${lines.join("\n")}`);
-    } else {
-      sections.push(`${pn} — not found in the registry.`);
-    }
+    const d = await decodePartNumber(pn);
+    const lines = d.segments.map((s) => `  • ${s.label}: ${s.code} — ${s.description}`);
+    sections.push(
+      d.found
+        ? `${pn} — "${d.productName}" (${d.status}, created by ${d.createdBy || "unknown"}):\n${lines.join("\n")}`
+        : `${pn} — not in the registry. Best-effort decode:\n${lines.join("\n")}`,
+    );
   }
 
   // ── 2. "How are part numbers created / structured?" ──
