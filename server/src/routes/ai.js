@@ -1,6 +1,7 @@
 import express from "express";
 import { q } from "../db.js";
 import { aiEnabled, chat, computeInsights } from "../ai.js";
+import { buildAskContext } from "../assistant.js";
 import { buildPartNumber, ALL_SEGMENTS } from "../segments.js";
 
 const router = express.Router();
@@ -45,26 +46,49 @@ router.post("/explain", async (req, res) => {
   }
 });
 
-// Freeform assistant (advisory only)
+// Freeform assistant (advisory only). Retrieval-first: pull the real rows the
+// question is about (decode part numbers, format guide, summary, code meanings,
+// series/company lookups), then answer from THAT — with the LLM narrating when
+// configured, or the grounded sections directly when it isn't.
 router.post("/ask", async (req, res) => {
   const { question } = req.body || {};
   if (!question) return res.status(400).json({ error: "question required" });
-  const { insights, stats } = await computeInsights();
-  const context = `Registry stats: ${JSON.stringify(stats)}\nKnown insights: ${insights.map((i) => i.title).join("; ")}`;
+
+  let sections = [];
+  try {
+    sections = await buildAskContext(question);
+  } catch { /* retrieval is best-effort */ }
+
+  // Nothing matched → fall back to registry health insights.
+  if (!sections.length) {
+    const { insights, stats } = await computeInsights();
+    sections = [
+      `Registry: ${stats?.total ?? "?"} part numbers.`,
+      ...insights.slice(0, 5).map((i) => `• ${i.title} — ${i.detail}`),
+    ];
+  }
+  const grounded = sections.join("\n\n");
+
   if (!aiEnabled()) {
-    return res.json({
-      answer: `AI provider not configured. Here is what the data shows:\n\n${insights.map((i) => `• ${i.title} — ${i.detail}`).join("\n")}`,
-      source: "deterministic",
-    });
+    return res.json({ answer: grounded, source: "data" });
   }
   try {
     const text = await chat([
-      { role: "system", content: "You are PartPilot's advisory assistant for IKIO LED Lighting part numbers. Be concise and helpful. You never modify data — only advise." },
-      { role: "user", content: `${context}\n\nQuestion: ${question}` },
+      {
+        role: "system",
+        content:
+          "You are PartPilot's advisory assistant for IKIO LED Lighting part numbers. " +
+          "Answer ONLY from the registry data provided — never invent part numbers, codes, or specs. " +
+          "If the data doesn't cover the question, say so and suggest where to look in the app " +
+          "(Builder, Library, Units & Values, Reports). Be concise and friendly; use short bullet lists. " +
+          "You never modify data — only advise.",
+      },
+      { role: "user", content: `Registry data:\n${grounded}\n\nQuestion: ${question}` },
     ]);
-    res.json({ answer: text, source: "ai" });
+    res.json({ answer: text || grounded, source: "ai" });
   } catch (err) {
-    res.status(502).json({ error: "AI request failed", detail: err.message });
+    // LLM down → still answer with the grounded data.
+    res.json({ answer: grounded, source: "data", note: err.message });
   }
 });
 
