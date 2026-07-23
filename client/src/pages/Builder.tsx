@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { Field, StatusBadge, FileUpload } from "../components/ui";
-import { api, fileUrl } from "../lib/api";
+import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { buildPartNumber, partSegments } from "../lib/partNumber";
@@ -261,7 +261,6 @@ export default function Builder() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th style={{ width: 64 }}>Image</th>
                   <th>Part Number</th>
                   <th>Product</th>
                   <th>Company</th>
@@ -273,11 +272,6 @@ export default function Builder() {
               <tbody>
                 {dup.similar.map((s) => (
                   <tr key={s.id}>
-                    <td>
-                      {s.image
-                        ? <img src={fileUrl(s.image)} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }} />
-                        : <span className="muted">—</span>}
-                    </td>
                     <td><span className="mono" style={{ fontWeight: 600 }}>{s.partNumber}</span></td>
                     <td>{s.productName || "—"}</td>
                     <td className="muted">{s.companyName || "—"}</td>
