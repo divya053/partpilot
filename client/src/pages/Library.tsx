@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { StatusBadge, Spinner, Empty, Pager, useConfirm } from "../components/ui";
 import { api, qs, API_BASE } from "../lib/api";
@@ -13,14 +13,16 @@ export default function Library() {
   const { can } = useAuth();
   const { confirm, node } = useConfirm();
 
+  // Seed filters from the URL so dashboard cards can deep-link (e.g. ?status=active).
+  const [params] = useSearchParams();
   const [rows, setRows] = useState<PartNumber[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [company, setCompany] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [category, setCategory] = useState("all");
+  const [search, setSearch] = useState(params.get("search") || "");
+  const [company, setCompany] = useState(params.get("company") || "all");
+  const [status, setStatus] = useState(params.get("status") || "all");
+  const [category, setCategory] = useState(params.get("category") || "all");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const pageSize = 15;

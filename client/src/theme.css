@@ -231,3 +231,26 @@ table.tbl .actions-cell { display: flex; gap: 4px; }
 .insight.success { border-left-color: var(--green); }
 .insight .t { font-weight: 600; font-size: 13px; }
 .insight .d { color: var(--ink-2); font-size: 12.5px; margin-top: 3px; }
+
+/* ─── Dashboard interactivity ─────────────────────────────────────────────── */
+.stat.click { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease; }
+.stat.click:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16,24,40,.09); border-color: var(--green-100); }
+.rank-row { display: grid; grid-template-columns: 96px 1fr 46px; gap: 10px; align-items: center; padding: 6px 6px; border-radius: 7px; transition: background .12s; }
+.rank-row.click { cursor: pointer; }
+.rank-row.click:hover { background: var(--green-50); }
+.rank-name { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-track { height: 10px; background: var(--line-2); border-radius: 20px; overflow: hidden; }
+.rank-fill { height: 100%; border-radius: 20px; transition: width .7s cubic-bezier(.4,0,.2,1); }
+.rank-val { text-align: right; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+.legend-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; cursor: pointer; padding: 4px 8px; border-radius: 7px; transition: background .12s; }
+.legend-item:hover, .legend-item.on { background: var(--line-2); }
+.legend-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.legend-item .lv { margin-left: auto; font-weight: 600; color: var(--ink-2); }
+.tbars { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 8px; }
+.tbar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; justify-content: flex-end; height: 100%; }
+.tbar .col { width: 100%; max-width: 34px; background: linear-gradient(180deg, var(--green), var(--green-dark)); border-radius: 6px 6px 0 0; transition: height .7s cubic-bezier(.4,0,.2,1); position: relative; }
+.tbar .col:hover { filter: brightness(1.08); }
+.tbar .lab { font-size: 10.5px; color: var(--ink-3); }
+.tbar .cnt { font-size: 11px; font-weight: 700; color: var(--ink-2); }
+.mini-thumb { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; border: 1px solid var(--line); }
