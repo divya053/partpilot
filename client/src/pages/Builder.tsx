@@ -259,7 +259,7 @@ export default function Builder() {
           <div className="card">
             <div className="card-head"><span className="step-badge">2</span><div><h3>Part Number Details</h3><div className="sub">Add product metadata, spec sheets and status for this part number.</div></div></div>
             <div className="card-pad">
-              <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              <div className="grid g2">
                 <Field label="Product Name" required><input className="input" value={form.productName ?? ""} onChange={(e) => set("productName", e.target.value)} placeholder="e.g. UFO High Bay 240W" /></Field>
                 <Field label="Category" required>
                   <select className="select" value={form.productCategory ?? ""} onChange={(e) => set("productCategory", e.target.value)}>

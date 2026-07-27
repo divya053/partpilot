@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { AssistantDock } from "./AssistantDock";
@@ -28,10 +28,13 @@ export function Layout({ title, subtitle, actions, children }: {
 }) {
   const { user, logout, can } = useAuth();
   const initials = (user?.displayName || "U").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  const [navOpen, setNavOpen] = useState(false);
+  const close = () => setNavOpen(false);
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <div className={"scrim" + (navOpen ? " show" : "")} onClick={close} />
+      <aside className={"sidebar" + (navOpen ? " open" : "")}>
         <div className="brand">
           <div className="logo">PART<span>PILOT</span></div>
           <div className="tag">IKIO LED Lighting</div>
@@ -41,7 +44,7 @@ export function Layout({ title, subtitle, actions, children }: {
             "group" in item ? (
               <div key={i} className="group-label">{item.group}</div>
             ) : item.cap && !can(item.cap) ? null : (
-              <NavLink key={item.to} to={item.to!} end={(item as any).end}
+              <NavLink key={item.to} to={item.to!} end={(item as any).end} onClick={close}
                 className={({ isActive }) => (isActive ? "active" : "")}>
                 <span className="ico">{item.icon}</span>{item.label}
               </NavLink>
@@ -60,6 +63,7 @@ export function Layout({ title, subtitle, actions, children }: {
 
       <div className="main">
         <header className="topbar">
+          <button className="hamburger" aria-label="Open menu" onClick={() => setNavOpen(true)}>☰</button>
           <div className="title">
             <h1>{title}</h1>
             {subtitle && <p>{subtitle}</p>}

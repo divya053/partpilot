@@ -51,7 +51,7 @@ export default function Login() {
 
         <div className="divider" />
         <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>Quick demo logins:</div>
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        <div className="grid g3" style={{ gap: 8 }}>
           {DEMOS.map((d) => (
             <div key={d.username} className="demo-chip" onClick={() => { setUsername(d.username); setPassword(d.password); }}>
               <div style={{ fontWeight: 700 }}>{d.role}</div>
