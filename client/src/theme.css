@@ -333,3 +333,13 @@ table.tbl .actions-cell { display: flex; gap: 4px; }
 .seg-toggle { margin-left: auto; display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .seg-toggle button { border: none; background: #fff; padding: 4px 11px; font-size: 12px; font-weight: 700; color: var(--ink-2); }
 .seg-toggle button.on { background: var(--green); color: #fff; }
+
+/* ─── Professional refinements (icons + neutral hero + KPI labels) ────────── */
+.nav a .ico { display: inline-flex; align-items: center; justify-content: center; width: 20px; opacity: .92; }
+.nav a.active .ico { opacity: 1; }
+.side-user button { display: inline-flex; align-items: center; justify-content: center; }
+.hamburger { align-items: center; justify-content: center; }
+.hero { background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow); }
+.hero h2 { letter-spacing: -0.01em; }
+.stat .k { text-transform: uppercase; letter-spacing: .4px; font-size: 11px; }
+.stat .ico svg, .qbtn .qi svg { display: block; }

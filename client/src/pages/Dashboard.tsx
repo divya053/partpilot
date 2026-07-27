@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { StatusBadge, Spinner } from "../components/ui";
+import { Icon } from "../components/Icon";
 import { api, fileUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
@@ -67,21 +68,21 @@ export default function Dashboard() {
       : { cls: "green", text: "All part numbers published ✓" };
 
   const QUICK = [
-    { i: "➕", t: "Create Part Number", s: "Build a new code", go: () => nav("/builder") },
-    { i: "🔍", t: "Decode a Number", s: "Understand any code", go: () => document.getElementById("decode-card")?.scrollIntoView({ behavior: "smooth", block: "center" }) },
-    { i: "📚", t: "Browse Library", s: `${s.parts} part numbers`, go: () => nav("/library") },
-    { i: "⬆", t: "Import / Export", s: "Bulk load or download", go: () => nav("/import-export") },
+    { i: "plus", t: "Create Part Number", s: "Build a new code", go: () => nav("/builder") },
+    { i: "search", t: "Decode a Number", s: "Understand any code", go: () => document.getElementById("decode-card")?.scrollIntoView({ behavior: "smooth", block: "center" }) },
+    { i: "book", t: "Browse Library", s: `${s.parts} part numbers`, go: () => nav("/library") },
+    { i: "swap", t: "Import / Export", s: "Bulk load or download", go: () => nav("/import-export") },
   ];
 
   const tiles = [
-    { k: "Total Part Numbers", v: s.parts, ico: "☰", go: "/library" },
-    { k: "Active", v: s.active, ico: "✓", go: "/library?status=active" },
-    { k: "Drafts", v: s.drafts, ico: "✎", go: "/library?status=draft" },
-    { k: "Deprecated", v: s.deprecated, ico: "⌫", go: "/library?status=deprecated" },
-    { k: "Companies", v: s.companies, ico: "🏢", go: "/companies" },
-    { k: "Products", v: s.products, ico: "📦", go: "/products" },
-    { k: "Segment Values", v: s.segmentValues, ico: "≣", go: "/values" },
-    { k: "With Image", v: s.withImage, ico: "🖼", go: "/library" },
+    { k: "Total Part Numbers", v: s.parts, ico: "layers", go: "/library" },
+    { k: "Active", v: s.active, ico: "check", go: "/library?status=active" },
+    { k: "Drafts", v: s.drafts, ico: "file", go: "/library?status=draft" },
+    { k: "Deprecated", v: s.deprecated, ico: "archive", go: "/library?status=deprecated" },
+    { k: "Companies", v: s.companies, ico: "building", go: "/companies" },
+    { k: "Products", v: s.products, ico: "box", go: "/products" },
+    { k: "Segment Values", v: s.segmentValues, ico: "rows", go: "/values" },
+    { k: "With Image", v: s.withImage, ico: "image", go: "/library" },
   ];
 
   return (
@@ -106,7 +107,7 @@ export default function Dashboard() {
         <div className="qa">
           {QUICK.map((a) => (
             <button key={a.t} className="qbtn" onClick={a.go}>
-              <span className="qi">{a.i}</span>
+              <span className="qi"><Icon name={a.i} size={18} /></span>
               <span><span className="qt">{a.t}</span><br /><span className="qs">{a.s}</span></span>
             </button>
           ))}
@@ -117,7 +118,7 @@ export default function Dashboard() {
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(165px, 1fr))", marginBottom: 18 }}>
         {tiles.map((t) => (
           <div key={t.k} className="stat click" onClick={() => nav(t.go)}>
-            <div className="k"><span className="ico">{t.ico}</span>{t.k}</div>
+            <div className="k"><span className="ico"><Icon name={t.ico} size={17} /></span>{t.k}</div>
             <div className="v">{t.v}</div>
           </div>
         ))}
@@ -125,7 +126,7 @@ export default function Dashboard() {
 
       {/* Decode box */}
       <div id="decode-card" className="card card-pad" style={{ marginBottom: 18 }}>
-        <h3 style={{ marginBottom: 4 }}>🔍 Decode a Part Number</h3>
+        <h3 style={{ marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}><Icon name="search" size={17} /> Decode a Part Number</h3>
         <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>Paste any part number to see what each segment means — works even if it isn't in the registry yet.</div>
         <div className="flex" style={{ gap: 8 }}>
           <input className="input mono" style={{ flex: 1 }} placeholder="e.g. IK-UHB3-02-S0240-MV-D-CCT-WD-01-BK-BFU"
@@ -231,7 +232,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card" style={{ flex: 1 }}>
-          <div className="card-head"><h3>✦ AI Insights</h3><span className="badge green" style={{ marginLeft: "auto" }}>Live</span></div>
+          <div className="card-head"><h3 style={{ display: "flex", alignItems: "center", gap: 8 }}><Icon name="star" size={16} /> AI Insights</h3><span className="badge green" style={{ marginLeft: "auto" }}>Live</span></div>
           <div className="card-pad grid" style={{ gap: 10 }}>
             {insights.length === 0 ? <div className="muted">Analyzing your registry…</div> :
               insights.map((i, idx) => (
