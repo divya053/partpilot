@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { Field, StatusBadge, FileUpload } from "../components/ui";
 import { api } from "../lib/api";
@@ -13,14 +13,18 @@ type Grouped = Record<string, SegmentValue[]>;
 export default function Builder() {
   const { id } = useParams();
   const nav = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const { can } = useAuth();
+
+  // Values pre-selected from the dashboard "Quick Build" (router state).
+  const prefill = (location.state as { prefill?: Record<string, string> } | null)?.prefill;
 
   const [meta, setMeta] = useState<{ core: SegmentDef[]; optional: SegmentDef[] } | null>(null);
   const [values, setValues] = useState<Grouped>({});
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [form, setForm] = useState<Record<string, any>>({ status: "active", productStage: "stocked" });
+  const [form, setForm] = useState<Record<string, any>>({ status: "active", productStage: "stocked", ...(prefill || {}) });
   const [saving, setSaving] = useState(false);
   const [explain, setExplain] = useState<string>("");
   const [explaining, setExplaining] = useState(false);

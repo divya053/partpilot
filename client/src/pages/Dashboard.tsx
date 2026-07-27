@@ -5,6 +5,11 @@ import { StatusBadge } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { api, fileUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useToast } from "../lib/toast";
+import { buildPartNumber, partSegments } from "../lib/partNumber";
+
+type SegDef = { key: string; label: string };
+type SegVal = { code: string; description: string };
 
 type NV = { name: string; value: number; id?: number };
 interface DashData {
@@ -26,6 +31,8 @@ export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   const [activeSlice, setActiveSlice] = useState(-1);
   const [dim, setDim] = useState("category");
+  const [core, setCore] = useState<SegDef[]>([]);
+  const [grouped, setGrouped] = useState<Record<string, SegVal[]>>({});
 
   const [decodeInput, setDecodeInput] = useState("");
   const [decoded, setDecoded] = useState<Decoded | null>(null);
@@ -34,6 +41,8 @@ export default function Dashboard() {
   useEffect(() => {
     api.get<DashData>("/dashboard").then((d) => { setData(d); setTimeout(() => setMounted(true), 80); }).catch(() => {});
     api.get<{ insights: Insight[] }>("/ai/insights").then((r) => setInsights(r.insights)).catch(() => {});
+    api.get<{ core: SegDef[] }>("/segments/meta").then((m) => setCore(m.core)).catch(() => {});
+    api.get<Record<string, SegVal[]>>("/segments/values/grouped").then(setGrouped).catch(() => {});
   }, []);
 
   const decode = async () => {
@@ -63,13 +72,6 @@ export default function Dashboard() {
       : { cls: "green", text: "All part numbers published" };
   const cur = dims.find((d) => d.key === dim) || dims[0];
 
-  const QUICK = [
-    { i: "plus", t: "Create Part Number", s: "Build a new code", go: () => nav("/builder") },
-    { i: "search", t: "Decode a Number", s: "Understand any code", go: () => document.getElementById("decode-card")?.scrollIntoView({ behavior: "smooth", block: "center" }) },
-    { i: "book", t: "Browse Library", s: `${s.parts} part numbers`, go: () => nav("/library") },
-    { i: "swap", t: "Import / Export", s: "Bulk load or download", go: () => nav("/import-export") },
-  ];
-
   const kpis = [
     { lbl: "Total Part Numbers", val: s.parts, icon: "layers", tint: "var(--green-50)", fg: "var(--green)", sub: <>across <b>{data.byCategory.length}</b> categories</>, go: "/library" },
     { lbl: "Active", val: s.active, icon: "check", tint: "var(--green-50)", fg: "var(--green)", sub: <><b>{pct(s.active)}%</b> of the registry</>, go: "/library?status=active" },
@@ -81,7 +83,7 @@ export default function Dashboard() {
     <Layout title={`Welcome back, ${user?.displayName?.split(" ")[0] || ""}`} subtitle="Live overview of your IKIO part-number registry."
       actions={<button className="btn primary" onClick={() => nav("/builder")}><Icon name="plus" size={16} /> Create New Part Number</button>}>
 
-      {/* Summary + quick actions */}
+      {/* Summary */}
       <div className="hero">
         <div className="flex" style={{ gap: 10, flexWrap: "wrap" }}>
           <h2 style={{ fontSize: 18 }}>Your part-number registry at a glance</h2>
@@ -91,15 +93,10 @@ export default function Dashboard() {
           <b>{s.parts}</b> part numbers · <b>{s.active}</b> active ({pct(s.active)}%) · <b>{s.drafts}</b> draft · <b>{s.deprecated}</b> deprecated ·
           spanning <b>{s.companies}</b> companies and <b>{s.products}</b> products. Every code is built from the same segments, so it stays consistent no matter who creates it.
         </div>
-        <div className="qa">
-          {QUICK.map((a) => (
-            <button key={a.t} className="qbtn" onClick={a.go}>
-              <span className="qi"><Icon name={a.i} size={18} /></span>
-              <span><span className="qt">{a.t}</span><br /><span className="qs">{a.s}</span></span>
-            </button>
-          ))}
-        </div>
       </div>
+
+      {/* Inline Quick Build — do the actual process on the dashboard */}
+      <QuickBuild core={core} grouped={grouped} nav={nav} />
 
       {/* KPI cards */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 18 }}>
@@ -237,10 +234,12 @@ function Bars({ data, mounted, onClick, colorFn }: { data: NV[]; mounted: boolea
         <div className="seg-toggle"><button className={pctMode ? "" : "on"} onClick={() => setPctMode(false)}>#</button><button className={pctMode ? "on" : ""} onClick={() => setPctMode(true)}>%</button></div>
       </div>
       {data.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>No data yet.</div> : data.map((d, i) => (
-        <div key={i} className={"rank-row" + (onClick ? " click" : "")} onClick={() => onClick?.(d)} title={onClick ? "Open in Library" : ""}>
-          <span className="rank-name mono">{d.name}</span>
+        <div key={i} className={"rank2" + (onClick ? " click" : "")} onClick={() => onClick?.(d)} title={onClick ? "Open in Library" : ""}>
+          <div className="rank2-top">
+            <span className="rank2-name">{d.name}</span>
+            <span className="rank2-val">{pctMode ? `${Math.round((d.value / sum) * 100)}%` : d.value}</span>
+          </div>
           <div className="rank-track"><div className="rank-fill" style={{ width: mounted ? `${(d.value / max) * 100}%` : "0%", background: colorFn(i) }} /></div>
-          <span className="rank-val">{pctMode ? `${Math.round((d.value / sum) * 100)}%` : d.value}</span>
         </div>
       ))}
     </>
@@ -298,6 +297,67 @@ function Gauge({ pct, mounted, color, label, sub }: { pct: number; mounted: bool
       </svg>
       <div className="glbl">{label}</div>
       <div className="gsub">{sub}</div>
+    </div>
+  );
+}
+
+// ─── Inline quick build (the actual process, on the dashboard) ───────────────
+function QuickBuild({ core, grouped, nav }: { core: SegDef[]; grouped: Record<string, SegVal[]>; nav: (to: string, opts?: any) => void }) {
+  const toast = useToast();
+  const [f, setF] = useState<Record<string, string>>({});
+  const ready = core.length > 0 && Object.keys(grouped).length > 0;
+
+  useEffect(() => {
+    if (!ready) return;
+    setF((prev) => {
+      if (Object.keys(prev).length) return prev;
+      const init: Record<string, string> = {};
+      for (const seg of core) { const opts = grouped[seg.key] || []; if (opts.length) init[seg.key] = opts[0].code; }
+      return init;
+    });
+  }, [ready, core, grouped]);
+
+  const code = buildPartNumber(f);
+  const chips = partSegments(f);
+  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
+  const copy = () => { navigator.clipboard.writeText(code); toast("Part number copied", "success"); };
+
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-head">
+        <div><h3>Quick Build a Part Number</h3><div className="sub">Pick the options and the code assembles live — then finish &amp; save in the Builder</div></div>
+      </div>
+      <div className="card-pad">
+        {!ready ? <div className="muted">Loading options…</div> : (
+          <>
+            <div className="qb-code" style={{ marginBottom: 14 }}>
+              <span className="pn">{code}</span>
+              <button className="btn" onClick={copy}>Copy</button>
+              <button className="btn primary" onClick={() => nav("/builder", { state: { prefill: f } })}>
+                <Icon name="sliders" size={16} /> Continue in Builder
+              </button>
+            </div>
+            <div className="seg-chips" style={{ marginBottom: 16 }}>
+              {chips.map((c, i) => (
+                <div key={i} className="flex" style={{ gap: 6 }}>
+                  <div className="seg-chip"><div className="code">{c.value}</div><div className="lab">{c.label}</div></div>
+                  {i < chips.length - 1 && <div className="seg-sep">–</div>}
+                </div>
+              ))}
+            </div>
+            <div className="qb-grid">
+              {core.map((seg) => (
+                <div key={seg.key} className="qb-field">
+                  <label>{seg.label}</label>
+                  <select className="select" value={f[seg.key] ?? ""} onChange={(e) => set(seg.key, e.target.value)}>
+                    {(grouped[seg.key] || []).map((o) => <option key={o.code} value={o.code}>{o.code} — {o.description}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
