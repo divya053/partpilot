@@ -59,6 +59,19 @@ export default function Dashboard() {
 
   if (!data) return <Layout title="Dashboard"><Spinner /></Layout>;
   const s = data.stats;
+  const activePct = s.parts ? Math.round((s.active / s.parts) * 100) : 0;
+  const health = s.parts === 0
+    ? { cls: "amber", text: "Let's create your first part number" }
+    : s.drafts > 0
+      ? { cls: "amber", text: `${s.drafts} draft${s.drafts > 1 ? "s" : ""} to review` }
+      : { cls: "green", text: "All part numbers published ✓" };
+
+  const QUICK = [
+    { i: "➕", t: "Create Part Number", s: "Build a new code", go: () => nav("/builder") },
+    { i: "🔍", t: "Decode a Number", s: "Understand any code", go: () => document.getElementById("decode-card")?.scrollIntoView({ behavior: "smooth", block: "center" }) },
+    { i: "📚", t: "Browse Library", s: `${s.parts} part numbers`, go: () => nav("/library") },
+    { i: "⬆", t: "Import / Export", s: "Bulk load or download", go: () => nav("/import-export") },
+  ];
 
   const tiles = [
     { k: "Total Part Numbers", v: s.parts, ico: "☰", go: "/library" },
@@ -75,6 +88,31 @@ export default function Dashboard() {
     <Layout title={`Welcome back, ${user?.displayName?.split(" ")[0] || ""}`} subtitle="Live overview of your IKIO part-number registry."
       actions={<button className="btn primary" onClick={() => nav("/builder")}>+ Create New Part Number</button>}>
 
+      {/* Friendly summary hero + quick actions */}
+      <div className="hero">
+        <div className="spread" style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="flex" style={{ gap: 10 }}>
+              <h2 style={{ fontSize: 18 }}>Your part-number registry at a glance</h2>
+              <span className={`badge ${health.cls} dot`}>{health.text}</span>
+            </div>
+            <div className="lead">
+              You have <b>{s.parts}</b> part numbers — <b>{s.active}</b> active ({activePct}%), <b>{s.drafts}</b> draft, <b>{s.deprecated}</b> deprecated —
+              spanning <b>{s.companies}</b> companies and <b>{s.products}</b> products.
+              Every part number is built from the same segments, so the codes stay consistent no matter who creates them.
+            </div>
+          </div>
+        </div>
+        <div className="qa">
+          {QUICK.map((a) => (
+            <button key={a.t} className="qbtn" onClick={a.go}>
+              <span className="qi">{a.i}</span>
+              <span><span className="qt">{a.t}</span><br /><span className="qs">{a.s}</span></span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* KPI tiles */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(165px, 1fr))", marginBottom: 18 }}>
         {tiles.map((t) => (
@@ -86,7 +124,7 @@ export default function Dashboard() {
       </div>
 
       {/* Decode box */}
-      <div className="card card-pad" style={{ marginBottom: 18 }}>
+      <div id="decode-card" className="card card-pad" style={{ marginBottom: 18 }}>
         <h3 style={{ marginBottom: 4 }}>🔍 Decode a Part Number</h3>
         <div className="muted" style={{ fontSize: 12.5, marginBottom: 10 }}>Paste any part number to see what each segment means — works even if it isn't in the registry yet.</div>
         <div className="flex" style={{ gap: 8 }}>
@@ -154,17 +192,20 @@ export default function Dashboard() {
 
       {/* Category + Company bars */}
       <div className="row" style={{ alignItems: "flex-start", marginBottom: 18 }}>
-        <RankCard title="Parts by Category" sub="Click a bar to open that category" data={data.byCategory} mounted={mounted}
-          color={(i) => PALETTE[i % PALETTE.length]} onClick={(d) => nav(`/library?category=${encodeURIComponent(d.name)}`)} />
-        <RankCard title="Top Companies" sub="Parts assigned per company" data={data.topCompanies} mounted={mounted}
-          color="#175cd3" onClick={(d) => d.id && nav(`/library?company=${d.id}`)} />
+        <RankCard title="Parts by Category" sub="👆 Click a bar to open that category" tip="Which product families your part numbers belong to (High Bay, Flood Light, etc.)."
+          data={data.byCategory} mounted={mounted} color={(i) => PALETTE[i % PALETTE.length]} onClick={(d) => nav(`/library?category=${encodeURIComponent(d.name)}`)} togglable />
+        <RankCard title="Top Companies" sub="👆 Click to see that company's parts" tip="How many part numbers are assigned to each company / customer."
+          data={data.topCompanies} mounted={mounted} color="#175cd3" onClick={(d) => d.id && nav(`/library?company=${d.id}`)} togglable />
       </div>
 
-      {/* Segment distributions */}
+      {/* Segment distributions — with plain-English tooltips */}
       <div className="row" style={{ alignItems: "flex-start", marginBottom: 18 }}>
-        <RankCard title="CCT" sub="Colour temperature mix" data={data.byCct} mounted={mounted} color="#dd8a0b" compact />
-        <RankCard title="Finish" sub="Housing colour mix" data={data.byFinish} mounted={mounted} color="#7a5af8" compact />
-        <RankCard title="Voltage Range" sub="Input voltage mix" data={data.byVoltage} mounted={mounted} color="#0e9384" compact />
+        <RankCard title="CCT" sub="Colour temperature mix" tip="Colour temperature — how warm or cool the light looks. 30K = warm white, 50K = daylight."
+          data={data.byCct} mounted={mounted} color="#dd8a0b" compact togglable />
+        <RankCard title="Finish" sub="Housing colour mix" tip="The colour of the fixture housing. BK = black, WH = white, BR = bronze, GR = grey."
+          data={data.byFinish} mounted={mounted} color="#7a5af8" compact togglable />
+        <RankCard title="Voltage Range" sub="Input voltage mix" tip="The mains voltage the fixture accepts. LV = low, MV = 120–277V, HV = high, MS = multi."
+          data={data.byVoltage} mounted={mounted} color="#0e9384" compact togglable />
       </div>
 
       {/* Recent parts + AI insights */}
@@ -238,21 +279,37 @@ function Donut({ data, active, setActive, colorFor, total, onSlice }: {
   );
 }
 
-// ─── Ranked horizontal bars ──────────────────────────────────────────────────
-function RankCard({ title, sub, data, mounted, color, onClick, compact }: {
-  title: string; sub?: string; data: NV[]; mounted: boolean; color: string | ((i: number) => string); onClick?: (d: NV) => void; compact?: boolean;
+// ─── Ranked horizontal bars (with explain-tooltip + count/% toggle) ──────────
+function RankCard({ title, sub, tip, data, mounted, color, onClick, compact, togglable }: {
+  title: string; sub?: string; tip?: string; data: NV[]; mounted: boolean; color: string | ((i: number) => string); onClick?: (d: NV) => void; compact?: boolean; togglable?: boolean;
 }) {
+  const [pct, setPct] = useState(false);
   const max = Math.max(...data.map((d) => d.value), 1);
+  const sum = data.reduce((a, d) => a + d.value, 0) || 1;
   const col = (i: number) => (typeof color === "function" ? color(i) : color);
   return (
     <div className="card" style={{ flex: 1 }}>
-      <div className="card-head"><div><h3>{title}</h3>{sub && <div className="sub">{sub}</div>}</div></div>
+      <div className="card-head">
+        <div>
+          <h3>
+            {title}
+            {tip && <span className="tip" data-tip={tip}><span className="ii">i</span></span>}
+          </h3>
+          {sub && <div className="sub">{sub}</div>}
+        </div>
+        {togglable && (
+          <div className="seg-toggle">
+            <button className={pct ? "" : "on"} onClick={() => setPct(false)}>#</button>
+            <button className={pct ? "on" : ""} onClick={() => setPct(true)}>%</button>
+          </div>
+        )}
+      </div>
       <div className="card-pad" style={{ paddingTop: 12 }}>
         {data.length === 0 ? <div className="muted" style={{ fontSize: 12.5 }}>No data yet.</div> : data.map((d, i) => (
           <div key={i} className={"rank-row" + (onClick ? " click" : "")} onClick={() => onClick?.(d)} title={onClick ? "Open in Library" : ""}>
             <span className="rank-name mono" style={{ fontWeight: compact ? 600 : 500 }}>{d.name}</span>
             <div className="rank-track"><div className="rank-fill" style={{ width: mounted ? `${(d.value / max) * 100}%` : "0%", background: col(i) }} /></div>
-            <span className="rank-val">{d.value}</span>
+            <span className="rank-val">{pct ? `${Math.round((d.value / sum) * 100)}%` : d.value}</span>
           </div>
         ))}
       </div>
