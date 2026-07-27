@@ -5,11 +5,6 @@ import { StatusBadge } from "../components/ui";
 import { Icon } from "../components/Icon";
 import { api, fileUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useToast } from "../lib/toast";
-import { buildPartNumber, partSegments } from "../lib/partNumber";
-
-type SegDef = { key: string; label: string };
-type SegVal = { code: string; description: string };
 
 type NV = { name: string; value: number; id?: number };
 interface DashData {
@@ -31,8 +26,6 @@ export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   const [activeSlice, setActiveSlice] = useState(-1);
   const [dim, setDim] = useState("category");
-  const [core, setCore] = useState<SegDef[]>([]);
-  const [grouped, setGrouped] = useState<Record<string, SegVal[]>>({});
 
   const [decodeInput, setDecodeInput] = useState("");
   const [decoded, setDecoded] = useState<Decoded | null>(null);
@@ -41,8 +34,6 @@ export default function Dashboard() {
   useEffect(() => {
     api.get<DashData>("/dashboard").then((d) => { setData(d); setTimeout(() => setMounted(true), 80); }).catch(() => {});
     api.get<{ insights: Insight[] }>("/ai/insights").then((r) => setInsights(r.insights)).catch(() => {});
-    api.get<{ core: SegDef[] }>("/segments/meta").then((m) => setCore(m.core)).catch(() => {});
-    api.get<Record<string, SegVal[]>>("/segments/values/grouped").then(setGrouped).catch(() => {});
   }, []);
 
   const decode = async () => {
@@ -94,9 +85,6 @@ export default function Dashboard() {
           spanning <b>{s.companies}</b> companies and <b>{s.products}</b> products. Every code is built from the same segments, so it stays consistent no matter who creates it.
         </div>
       </div>
-
-      {/* Inline Quick Build — do the actual process on the dashboard */}
-      <QuickBuild core={core} grouped={grouped} nav={nav} />
 
       {/* KPI cards */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 18 }}>
@@ -297,67 +285,6 @@ function Gauge({ pct, mounted, color, label, sub }: { pct: number; mounted: bool
       </svg>
       <div className="glbl">{label}</div>
       <div className="gsub">{sub}</div>
-    </div>
-  );
-}
-
-// ─── Inline quick build (the actual process, on the dashboard) ───────────────
-function QuickBuild({ core, grouped, nav }: { core: SegDef[]; grouped: Record<string, SegVal[]>; nav: (to: string, opts?: any) => void }) {
-  const toast = useToast();
-  const [f, setF] = useState<Record<string, string>>({});
-  const ready = core.length > 0 && Object.keys(grouped).length > 0;
-
-  useEffect(() => {
-    if (!ready) return;
-    setF((prev) => {
-      if (Object.keys(prev).length) return prev;
-      const init: Record<string, string> = {};
-      for (const seg of core) { const opts = grouped[seg.key] || []; if (opts.length) init[seg.key] = opts[0].code; }
-      return init;
-    });
-  }, [ready, core, grouped]);
-
-  const code = buildPartNumber(f);
-  const chips = partSegments(f);
-  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
-  const copy = () => { navigator.clipboard.writeText(code); toast("Part number copied", "success"); };
-
-  return (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <div className="card-head">
-        <div><h3>Quick Build a Part Number</h3><div className="sub">Pick the options and the code assembles live — then finish &amp; save in the Builder</div></div>
-      </div>
-      <div className="card-pad">
-        {!ready ? <div className="muted">Loading options…</div> : (
-          <>
-            <div className="qb-code" style={{ marginBottom: 14 }}>
-              <span className="pn">{code}</span>
-              <button className="btn" onClick={copy}>Copy</button>
-              <button className="btn primary" onClick={() => nav("/builder", { state: { prefill: f } })}>
-                <Icon name="sliders" size={16} /> Continue in Builder
-              </button>
-            </div>
-            <div className="seg-chips" style={{ marginBottom: 16 }}>
-              {chips.map((c, i) => (
-                <div key={i} className="flex" style={{ gap: 6 }}>
-                  <div className="seg-chip"><div className="code">{c.value}</div><div className="lab">{c.label}</div></div>
-                  {i < chips.length - 1 && <div className="seg-sep">–</div>}
-                </div>
-              ))}
-            </div>
-            <div className="qb-grid">
-              {core.map((seg) => (
-                <div key={seg.key} className="qb-field">
-                  <label>{seg.label}</label>
-                  <select className="select" value={f[seg.key] ?? ""} onChange={(e) => set(seg.key, e.target.value)}>
-                    {(grouped[seg.key] || []).map((o) => <option key={o.code} value={o.code}>{o.code} — {o.description}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 }
