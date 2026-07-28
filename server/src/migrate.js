@@ -57,6 +57,13 @@ const STATEMENTS = [
     UNIQUE KEY segment_values_key_code (segment_key, code)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 
+  `CREATE TABLE IF NOT EXISTS segment_overrides (
+    segment_key VARCHAR(64) PRIMARY KEY,
+    label VARCHAR(191),
+    help TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
   `CREATE TABLE IF NOT EXISTS companies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

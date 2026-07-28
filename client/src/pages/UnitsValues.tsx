@@ -32,6 +32,10 @@ export default function UnitsValues() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Inline bulk edit (edit many rows' description/active, save all at once)
+  const [bulkEdit, setBulkEdit] = useState(false);
+  const [edits, setEdits] = useState<Record<number, { description?: string; isActive?: boolean }>>({});
+
   // Edit/Add form (+ the per-model "meanings" the dependency needs)
   const [editing, setEditing] = useState<any | null>(null);
   const [mdList, setMdList] = useState<MdEntry[]>([]);
@@ -89,6 +93,28 @@ export default function UnitsValues() {
     catch (e) { toast((e as Error).message, "error"); }
   };
 
+  // Inline bulk edit
+  const editVal = (id: number, patch: { description?: string; isActive?: boolean }) =>
+    setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } }));
+  const dirtyCount = Object.keys(edits).length;
+  const toggleBulk = () => { setBulkEdit((v) => !v); setEdits({}); };
+  const saveAll = async () => {
+    const ids = Object.keys(edits);
+    if (!ids.length) return;
+    setSaving(true);
+    try {
+      for (const id of ids) {
+        const p = edits[Number(id)];
+        const body: Record<string, unknown> = {};
+        if (p.description !== undefined) body.description = p.description;
+        if (p.isActive !== undefined) body.isActive = p.isActive;
+        if (Object.keys(body).length) await api.patch(`/segments/values/${id}`, body);
+      }
+      toast(`${ids.length} value(s) updated`, "success");
+      setEdits({}); setBulkEdit(false); load();
+    } catch (e) { toast((e as Error).message, "error"); } finally { setSaving(false); }
+  };
+
   const addMd = () => setMdList((l) => [...l, { model: "", text: "" }]);
   const setMd = (i: number, patch: Partial<MdEntry>) => setMdList((l) => l.map((e, idx) => (idx === i ? { ...e, ...patch } : e)));
   const delMd = (i: number) => setMdList((l) => l.filter((_, idx) => idx !== i));
@@ -139,8 +165,10 @@ export default function UnitsValues() {
   return (
     <Layout title="Units & Values" subtitle="Manage each segment's codes, descriptions and per-model meanings."
       actions={can("write") && <>
-        <button className="btn" onClick={openBulk}>Bulk Descriptions</button>
-        <button className="btn primary" onClick={openAdd}>+ Add Value</button>
+        {bulkEdit && dirtyCount > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all (${dirtyCount})`}</button>}
+        <button className={"btn" + (bulkEdit ? " danger" : "")} onClick={toggleBulk}>{bulkEdit ? "Exit bulk edit" : "✎ Bulk edit"}</button>
+        {!bulkEdit && <button className="btn" onClick={openBulk}>Bulk via Excel</button>}
+        {!bulkEdit && <button className="btn primary" onClick={openAdd}>+ Add Value</button>}
       </>}>
 
       {/* Section tabs — pick a segment to manage its values */}
@@ -171,7 +199,12 @@ export default function UnitsValues() {
                     <tr key={r.id}>
                       <td><span className="badge gray">{label(r.segment_key)}</span></td>
                       <td><span className="mono" style={{ fontWeight: 600 }}>{r.code}</span></td>
-                      <td>{r.description}</td>
+                      <td>
+                        {bulkEdit
+                          ? <input className="input" style={{ minWidth: 180 }} value={edits[r.id]?.description ?? r.description}
+                              onChange={(e) => editVal(r.id, { description: e.target.value })} />
+                          : r.description}
+                      </td>
                       <td>
                         {mds.length === 0 ? <span className="muted">—</span> : (
                           <div className="flex" style={{ flexWrap: "wrap", gap: 5 }}>
@@ -182,11 +215,15 @@ export default function UnitsValues() {
                           </div>
                         )}
                       </td>
-                      <td>{r.is_active ? <span className="badge green dot">Active</span> : <span className="badge gray dot">Off</span>}</td>
+                      <td>
+                        {bulkEdit
+                          ? <label className="flex" style={{ gap: 6 }}><input type="checkbox" checked={edits[r.id]?.isActive ?? !!r.is_active} onChange={(e) => editVal(r.id, { isActive: e.target.checked })} /> Active</label>
+                          : (r.is_active ? <span className="badge green dot">Active</span> : <span className="badge gray dot">Off</span>)}
+                      </td>
                       <td>
                         <div className="actions-cell" style={{ justifyContent: "flex-end" }}>
-                          {can("write") && <button className="icon-btn" title="Edit" onClick={() => openEdit(r)}>✎</button>}
-                          {can("delete") && <button className="icon-btn danger" title="Delete" onClick={() => remove(r)}>🗑</button>}
+                          {can("write") && <button className="icon-btn" title="Edit (incl. per-model meanings)" onClick={() => openEdit(r)} disabled={bulkEdit}>✎</button>}
+                          {can("delete") && <button className="icon-btn danger" title="Delete" onClick={() => remove(r)} disabled={bulkEdit}>🗑</button>}
                         </div>
                       </td>
                     </tr>

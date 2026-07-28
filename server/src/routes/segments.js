@@ -18,9 +18,56 @@ const parse = (r) => {
   return r;
 };
 
+// Editable label/help overrides for the built-in attribute definitions.
+async function loadOverrides() {
+  const rows = await q("SELECT segment_key, label, help FROM segment_overrides");
+  const map = {};
+  for (const r of rows) map[r.segment_key] = r;
+  return map;
+}
+const applyOv = (d, ov) => {
+  const o = ov[d.key];
+  return o ? { ...d, label: o.label ?? d.label, help: o.help ?? d.help } : d;
+};
+
 // Segment definitions/metadata (for the Attributes page + builder ordering)
-router.get("/meta", (_req, res) => {
-  res.json({ core: CORE_SEGMENTS, optional: OPTIONAL_SEGMENTS, all: ALL_SEGMENTS });
+router.get("/meta", async (_req, res) => {
+  const ov = await loadOverrides();
+  const core = CORE_SEGMENTS.map((d) => applyOv(d, ov));
+  const optional = OPTIONAL_SEGMENTS.map((d) => applyOv(d, ov));
+  res.json({ core, optional, all: [...core, ...optional] });
+});
+
+// Update one attribute's label/help.
+router.patch("/def/:key", requireCap("write"), async (req, res) => {
+  const key = req.params.key;
+  if (!ALL_SEGMENTS.some((s) => s.key === key)) return res.status(404).json({ error: "Unknown attribute" });
+  const { label, help } = req.body || {};
+  await pool.query(
+    `INSERT INTO segment_overrides (segment_key, label, help) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE label = VALUES(label), help = VALUES(help)`,
+    [key, label ?? null, help ?? null],
+  );
+  await logAudit(req, "Attribute", "Updated", `Updated attribute ${key}`);
+  res.json({ ok: true });
+});
+
+// Bulk-update several attributes' label/help at once.
+router.post("/def/bulk", requireCap("write"), async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  let updated = 0;
+  for (const r of rows) {
+    const key = String(r.key || "").trim();
+    if (!ALL_SEGMENTS.some((s) => s.key === key)) continue;
+    await pool.query(
+      `INSERT INTO segment_overrides (segment_key, label, help) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE label = VALUES(label), help = VALUES(help)`,
+      [key, r.label ?? null, r.help ?? null],
+    );
+    updated++;
+  }
+  await logAudit(req, "Attribute", "Updated", `Bulk updated ${updated} attribute(s)`);
+  res.json({ updated });
 });
 
 // All values grouped by segmentKey (for the builder dropdowns), ranked by how
@@ -55,8 +102,9 @@ router.get("/summary", async (_req, res) => {
     "SELECT segment_key, COUNT(*) AS value_count, SUM(is_active) AS active_count FROM segment_values GROUP BY segment_key",
   );
   const map = Object.fromEntries(counts.map((c) => [c.segment_key, c]));
+  const ov = await loadOverrides();
   res.json(
-    ALL_SEGMENTS.map((s) => ({
+    ALL_SEGMENTS.map((s) => applyOv(s, ov)).map((s) => ({
       ...s,
       required: CORE_SEGMENTS.some((c) => c.key === s.key),
       valueCount: Number(map[s.key]?.value_count || 0),
