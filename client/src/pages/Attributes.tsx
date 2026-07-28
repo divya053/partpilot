@@ -18,6 +18,7 @@ export default function Attributes() {
   const [defs, setDefs] = useState<SegmentDef[] | null>(null);
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false); // view-only until the user opts in
 
   const load = () => api.get<SegmentDef[]>("/segments/summary").then(setDefs).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -51,9 +52,14 @@ export default function Attributes() {
     } catch (e) { toast((e as Error).message, "error"); } finally { setSaving(false); }
   };
 
+  const toggleEdit = () => { setEditMode((v) => !v); setEdits({}); };
+
   return (
-    <Layout title="Attributes" subtitle="The segments that make up every IKIO part number, in order. Rename them or refine their help text."
-      actions={editable && dirty.length > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all changes (${dirty.length})`}</button>}>
+    <Layout title="Attributes" subtitle="The segments that make up every IKIO part number, in order."
+      actions={editable && <>
+        {editMode && dirty.length > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all changes (${dirty.length})`}</button>}
+        <button className={"btn" + (editMode ? " danger" : "")} onClick={toggleEdit}>{editMode ? "Done" : "✎ Edit attributes"}</button>
+      </>}>
       <div className="card">
         <div className="table-wrap">
           <table className="tbl">
@@ -65,7 +71,7 @@ export default function Attributes() {
                   <tr key={d.key} style={isDirty ? { background: "var(--green-50)" } : undefined}>
                     <td className="muted">{i + 1}</td>
                     <td style={{ minWidth: 170 }}>
-                      {editable
+                      {editMode
                         ? <input className="input" value={val(d, "label")} onChange={(e) => setEdit(d.key, { label: e.target.value })} />
                         : <strong>{d.label}</strong>}
                     </td>
@@ -73,15 +79,16 @@ export default function Attributes() {
                     <td>{d.required ? <span className="badge green">Required</span> : <span className="badge blue">Optional</span>}{d.letter ? <span className="badge gray mono" style={{ marginLeft: 4 }}>{d.letter}</span> : null}</td>
                     <td><span className="badge gray" style={{ cursor: "pointer" }} onClick={() => nav("/values")}>{d.valueCount} values</span></td>
                     <td style={{ minWidth: 260 }}>
-                      {editable
+                      {editMode
                         ? <input className="input" value={val(d, "help")} onChange={(e) => setEdit(d.key, { help: e.target.value })} />
                         : <span className="muted">{d.help}</span>}
                     </td>
                     {editable && (
                       <td>
                         <div className="actions-cell" style={{ justifyContent: "flex-end", gap: 6 }}>
-                          <button className="btn sm" disabled={!isDirty || saving} onClick={() => saveOne(d)}>Save</button>
-                          <button className="btn sm" title="Manage values" onClick={() => nav("/values")}>Values →</button>
+                          {editMode
+                            ? <button className="btn sm" disabled={!isDirty || saving} onClick={() => saveOne(d)}>Save</button>
+                            : <button className="btn sm" title="Manage values" onClick={() => nav("/values")}>Values →</button>}
                         </div>
                       </td>
                     )}

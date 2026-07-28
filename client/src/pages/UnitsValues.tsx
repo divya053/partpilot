@@ -206,14 +206,15 @@ export default function UnitsValues() {
                           : r.description}
                       </td>
                       <td>
-                        {mds.length === 0 ? <span className="muted">—</span> : (
-                          <div className="flex" style={{ flexWrap: "wrap", gap: 5 }}>
+                        <div className="flex" style={{ flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+                          {mds.length === 0 ? <span className="muted">—</span> : (<>
                             {mds.slice(0, 3).map(([m, d]) => (
                               <span key={m} className="badge blue" title={String(d)}><b>{m}</b>&nbsp;{String(d).slice(0, 18)}{String(d).length > 18 ? "…" : ""}</span>
                             ))}
                             {mds.length > 3 && <span className="badge gray">+{mds.length - 3} more</span>}
-                          </div>
-                        )}
+                          </>)}
+                          {bulkEdit && can("write") && <button className="btn sm" title="Edit per-model meanings" onClick={() => openEdit(r)}>✎ meanings</button>}
+                        </div>
                       </td>
                       <td>
                         {bulkEdit
@@ -222,7 +223,7 @@ export default function UnitsValues() {
                       </td>
                       <td>
                         <div className="actions-cell" style={{ justifyContent: "flex-end" }}>
-                          {can("write") && <button className="icon-btn" title="Edit (incl. per-model meanings)" onClick={() => openEdit(r)} disabled={bulkEdit}>✎</button>}
+                          {can("write") && <button className="icon-btn" title="Edit (incl. per-model meanings)" onClick={() => openEdit(r)}>✎</button>}
                           {can("delete") && <button className="icon-btn danger" title="Delete" onClick={() => remove(r)} disabled={bulkEdit}>🗑</button>}
                         </div>
                       </td>
