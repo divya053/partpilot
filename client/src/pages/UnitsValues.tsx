@@ -36,6 +36,11 @@ export default function UnitsValues() {
   const [bulkEdit, setBulkEdit] = useState(false);
   const [edits, setEdits] = useState<Record<number, { description?: string; isActive?: boolean }>>({});
 
+  // Matrix editor: codes × product models grid for fast per-model meanings
+  const [matrixMode, setMatrixMode] = useState(false);
+  const matrixSection = segmentKey === "all" ? (defs.find((d) => d.key !== "productModel")?.key || defs[0]?.key || "") : segmentKey;
+  const openMatrix = () => { if (segmentKey === "all") setSegmentKey(matrixSection); setMatrixMode(true); };
+
   // Edit/Add form (+ the per-model "meanings" the dependency needs)
   const [editing, setEditing] = useState<any | null>(null);
   const [mdList, setMdList] = useState<MdEntry[]>([]);
@@ -164,12 +169,15 @@ export default function UnitsValues() {
 
   return (
     <Layout title="Units & Values" subtitle="Manage each segment's codes, descriptions and per-model meanings."
-      actions={can("write") && <>
+      actions={can("write") && (matrixMode ? (
+        <button className="btn danger" onClick={() => setMatrixMode(false)}>← Back to table</button>
+      ) : (<>
         {bulkEdit && dirtyCount > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all (${dirtyCount})`}</button>}
         <button className={"btn" + (bulkEdit ? " danger" : "")} onClick={toggleBulk}>{bulkEdit ? "Exit bulk edit" : "✎ Bulk edit"}</button>
+        {!bulkEdit && <button className="btn" onClick={openMatrix}>▦ Per-model matrix</button>}
         {!bulkEdit && <button className="btn" onClick={openBulk}>Bulk via Excel</button>}
         {!bulkEdit && <button className="btn primary" onClick={openAdd}>+ Add Value</button>}
-      </>}>
+      </>))}>
 
       {/* Section tabs — pick a segment to manage its values */}
       <div className="segctl" style={{ marginBottom: 14, maxWidth: "100%", overflowX: "auto", flexWrap: "nowrap" }}>
@@ -177,6 +185,9 @@ export default function UnitsValues() {
         {defs.map((d) => <button key={d.key} className={segmentKey === d.key ? "on" : ""} onClick={() => setSegmentKey(d.key)}>{d.label}</button>)}
       </div>
 
+      {matrixMode ? (
+        <MatrixEditor key={matrixSection} segmentKey={matrixSection} segLabel={label(matrixSection)} models={models} onSaved={load} />
+      ) : (
       <div className="card">
         <div className="card-pad" style={{ paddingBottom: 0 }}>
           <div className="toolbar">
@@ -235,6 +246,7 @@ export default function UnitsValues() {
           </div>
         )}
       </div>
+      )}
 
       {/* Add / Edit modal with per-model dependency editor */}
       {editing && (
@@ -306,5 +318,104 @@ export default function UnitsValues() {
       )}
       {node}
     </Layout>
+  );
+}
+
+// ─── Spreadsheet-style per-model matrix: codes (rows) × product models (cols) ──
+function MatrixEditor({ segmentKey, segLabel, models, onSaved }: {
+  segmentKey: string; segLabel: string; models: { code: string; description: string }[]; onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [vals, setVals] = useState<SegmentValue[]>([]);
+  const [grid, setGrid] = useState<Record<number, Record<string, string>>>({});
+  const [dirty, setDirty] = useState<Set<number>>(new Set());
+  const [cols, setCols] = useState<string[]>(models.map((m) => m.code));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setCols(models.map((m) => m.code)); }, [models]);
+  useEffect(() => {
+    setLoading(true);
+    api.get<SegmentValue[]>("/segments/values" + qs({ segmentKey }))
+      .then((r) => {
+        setVals(r);
+        const g: Record<number, Record<string, string>> = {};
+        for (const v of r) g[v.id] = { ...(v.model_descriptions || {}) };
+        setGrid(g); setDirty(new Set());
+      })
+      .catch((e) => toast(e.message, "error")).finally(() => setLoading(false));
+  }, [segmentKey]);
+
+  const setCell = (id: number, model: string, text: string) => {
+    setGrid((g) => ({ ...g, [id]: { ...g[id], [model]: text } }));
+    setDirty((d) => new Set(d).add(id));
+  };
+  const saveAll = async () => {
+    const ids = [...dirty];
+    if (!ids.length) return;
+    setSaving(true);
+    try {
+      for (const id of ids) {
+        const md: Record<string, string> = {};
+        for (const [m, t] of Object.entries(grid[id] || {})) if (t && t.trim()) md[m] = t.trim();
+        await api.patch(`/segments/values/${id}`, { modelDescriptions: md });
+      }
+      toast(`${ids.length} value(s) updated`, "success");
+      setDirty(new Set()); onSaved();
+    } catch (e) { toast((e as Error).message, "error"); } finally { setSaving(false); }
+  };
+
+  const shownModels = models.filter((m) => cols.includes(m.code));
+
+  return (
+    <div className="card">
+      <div className="card-head" style={{ flexWrap: "wrap", gap: 10 }}>
+        <div><h3>Per-model meanings — {segLabel}</h3><div className="sub">Fill a cell with what the code means for that model (e.g. “Version 1”, “2 inch”, “60 LEDs”). Empty = use the default description.</div></div>
+        <button className="btn primary" style={{ marginLeft: "auto" }} onClick={saveAll} disabled={saving || dirty.size === 0}>
+          {saving ? "Saving…" : `Save all (${dirty.size})`}
+        </button>
+      </div>
+      <div className="card-pad" style={{ paddingBottom: 8 }}>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Show model columns:</div>
+        <div className="flex" style={{ flexWrap: "wrap", gap: 6 }}>
+          <button className="btn sm" onClick={() => setCols(models.map((m) => m.code))}>All</button>
+          <button className="btn sm" onClick={() => setCols([])}>None</button>
+          {models.map((m) => (
+            <label key={m.code} className={"badge " + (cols.includes(m.code) ? "green" : "gray")} style={{ cursor: "pointer", gap: 5 }} title={m.description}>
+              <input type="checkbox" checked={cols.includes(m.code)} onChange={(e) => setCols((c) => e.target.checked ? [...c, m.code] : c.filter((x) => x !== m.code))} />
+              {m.code}
+            </label>
+          ))}
+        </div>
+      </div>
+      {loading ? <Spinner /> : vals.length === 0 ? <Empty title="No codes in this segment yet" /> : shownModels.length === 0 ? (
+        <div className="card-pad muted">Select at least one model column above.</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th style={{ position: "sticky", left: 0, background: "#fbfcfd", zIndex: 2 }}>Code</th>
+                <th style={{ position: "sticky", left: 60, background: "#fbfcfd", zIndex: 2, minWidth: 140 }}>Default</th>
+                {shownModels.map((m) => <th key={m.code} title={m.description} style={{ whiteSpace: "nowrap" }}>{m.code}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {vals.map((v) => (
+                <tr key={v.id}>
+                  <td className="mono" style={{ position: "sticky", left: 0, background: "#fff", fontWeight: 700, zIndex: 1 }}>{v.code}</td>
+                  <td className="muted" style={{ position: "sticky", left: 60, background: "#fff", zIndex: 1, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.description}>{v.description}</td>
+                  {shownModels.map((m) => (
+                    <td key={m.code} style={{ padding: 4 }}>
+                      <input className="input" style={{ minWidth: 120, padding: "6px 8px" }} value={grid[v.id]?.[m.code] ?? ""} onChange={(e) => setCell(v.id, m.code, e.target.value)} placeholder="—" />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
