@@ -211,54 +211,40 @@ export default function UnitsValues() {
   );
 }
 
-// ─── Excel import with column mapping ─────────────────────────────────────────
+// ─── Excel import: one sheet per segment, or single sheet with column mapping ──
 type Target = "ignore" | "segment" | "code" | "description" | `model:${string}`;
+type ParsedSheet = { name: string; headers: string[]; rows: string[][] };
+type VRow = { segmentKey: string; code: string; description: string; modelDescriptions: Record<string, string> };
+const sanitizeSheet = (s: string) => s.replace(/[\\/?*[\]:]/g, "-").replace(/\s+/g, " ").trim().slice(0, 31);
 
 function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; models: Model[]; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
   const [fileName, setFileName] = useState("");
-  const [sheetNames, setSheetNames] = useState<string[]>([]);
-  const [wb, setWb] = useState<any>(null);
-  const [sheet, setSheet] = useState("");
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [dataRows, setDataRows] = useState<string[][]>([]);
+  const [sheets, setSheets] = useState<ParsedSheet[]>([]);
+  const [perSheet, setPerSheet] = useState(true);       // one segment per sheet
+  const [sheetName, setSheetName] = useState("");         // active sheet in single mode
   const [map, setMap] = useState<Record<number, Target>>({});
   const [defaultSeg, setDefaultSeg] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ updated: number; created: number; withModels: number; errors: { row: number; error: string }[] } | null>(null);
 
   const norm = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const resolveSegByName = (name: string) => { const n = norm(name); const d = defs.find((x) => norm(x.label) === n || x.key.toLowerCase() === n || norm(sanitizeSheet(x.label)) === n); return d?.key || null; };
+  const resolveSegByCell = (cell: string) => { const n = norm(cell); const d = defs.find((x) => norm(x.label) === n || x.key.toLowerCase() === n); return d?.key || null; };
 
-  const autoMap = (hdrs: string[]) => {
+  const computeMap = (hdrs: string[]) => {
     const m: Record<number, Target> = {};
-    let seg = "";
     hdrs.forEach((h, i) => {
       const n = norm(h);
       if (!n) { m[i] = "ignore"; return; }
-      if (/(^|\b)(code)\b/.test(n)) { m[i] = "code"; return; }
+      if (/(^|\b)code\b/.test(n)) { m[i] = "code"; return; }
       if (/(desc|description|meaning|default)/.test(n)) { m[i] = "description"; return; }
       if (/(section|segment|attribute|part number section)/.test(n)) { m[i] = "segment"; return; }
       const model = models.find((mo) => norm(mo.description) === n || norm(mo.code) === n || (mo.description && n.includes(norm(mo.description))));
       if (model) { m[i] = `model:${model.code}`; return; }
       m[i] = "ignore";
     });
-    setMap(m);
-    // guess default segment from the sheet name
-    const sn = norm(sheet);
-    const d = defs.find((x) => norm(x.label) === sn || x.key.toLowerCase() === sn);
-    if (d) seg = d.key;
-    if (!seg && !hdrs.some((_, i) => m[i] === "segment")) seg = defs.find((x) => x.key !== "productModel")?.key || defs[0]?.key || "";
-    if (seg) setDefaultSeg(seg);
-  };
-
-  const loadSheet = async (workbook: any, name: string) => {
-    const XLSX = await import("xlsx");
-    const grid = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets[name], { header: 1, raw: false, defval: "", blankrows: false });
-    const hdrs = (grid[0] || []).map((c: any) => String(c).trim());
-    setHeaders(hdrs);
-    setDataRows(grid.slice(1) as string[][]);
-    setSheet(name);
-    autoMap(hdrs);
+    return m;
   };
 
   const onFile = async (file?: File | null) => {
@@ -266,71 +252,84 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
     setResult(null);
     try {
       const XLSX = await import("xlsx");
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      setWb(workbook); setSheetNames(workbook.SheetNames); setFileName(file.name);
-      const pref = workbook.SheetNames.find((s: string) => norm(s).includes("value description")) || workbook.SheetNames[0];
-      await loadSheet(workbook, pref);
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const parsed: ParsedSheet[] = wb.SheetNames.map((name: string) => {
+        const grid = XLSX.utils.sheet_to_json<any[]>(wb.Sheets[name], { header: 1, raw: false, defval: "", blankrows: false });
+        return { name, headers: (grid[0] || []).map((c: any) => String(c).trim()), rows: grid.slice(1) as string[][] };
+      });
+      setSheets(parsed); setFileName(file.name);
+      const matching = parsed.filter((s) => resolveSegByName(s.name)).length;
+      setPerSheet(matching >= 2 && matching >= parsed.length - 1);
+      const pref = parsed.find((s) => norm(s.name).includes("value description")) || parsed[0];
+      if (pref) { setSheetName(pref.name); setMap(computeMap(pref.headers)); setDefaultSeg(resolveSegByName(pref.name) || defs.find((d) => d.key !== "productModel")?.key || ""); }
     } catch { toast("Could not read that file. Use .xlsx or .csv.", "error"); }
   };
 
-  // Pre-filled template in the importable shape: Segment · Code · Description +
-  // one column per product model (a model's description as the header, so the
-  // importer auto-maps it back). Existing per-model meanings are filled in.
+  // Template: one sheet per segment (Code · Description + a column per model).
   const downloadTemplate = async () => {
     try {
       const all = await api.get<SegmentValue[]>("/segments/values" + qs({ segmentKey: "all" }));
       const XLSX = await import("xlsx");
+      const byKey: Record<string, SegmentValue[]> = {};
+      for (const v of all) (byKey[v.segment_key] ||= []).push(v);
       const modelHeaders = models.map((m) => m.description || m.code);
-      const data = all.map((v) => {
-        const row: Record<string, string> = { Segment: label(v.segment_key, defs), Code: v.code, Description: v.description || "" };
-        models.forEach((m) => { row[m.description || m.code] = (v.model_descriptions && v.model_descriptions[m.code]) || ""; });
-        return row;
-      });
-      const ws = XLSX.utils.json_to_sheet(data, { header: ["Segment", "Code", "Description", ...modelHeaders] });
-      ws["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 42 }, ...modelHeaders.map(() => ({ wch: 22 }))];
-      const wbk = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wbk, ws, "Value Descriptions");
-      XLSX.writeFile(wbk, "partpilot-values-template.xlsx");
-      toast(`Template with ${data.length} rows downloaded`, "success");
+      const wb = XLSX.utils.book_new();
+      const used = new Set<string>();
+      for (const d of defs) {
+        if (d.key === "productModel") continue;
+        const vals = byKey[d.key] || [];
+        if (!vals.length) continue;
+        const data = vals.map((v) => {
+          const row: Record<string, string> = { Code: v.code, Description: v.description || "" };
+          models.forEach((m) => { row[m.description || m.code] = (v.model_descriptions && v.model_descriptions[m.code]) || ""; });
+          return row;
+        });
+        let name = sanitizeSheet(d.label) || d.key, n = 2;
+        while (used.has(name.toLowerCase())) { name = `${sanitizeSheet(d.label).slice(0, 28)} ${n}`; n++; }
+        used.add(name.toLowerCase());
+        const ws = XLSX.utils.json_to_sheet(data, { header: ["Code", "Description", ...modelHeaders] });
+        ws["!cols"] = [{ wch: 12 }, { wch: 42 }, ...modelHeaders.map(() => ({ wch: 22 }))];
+        XLSX.utils.book_append_sheet(wb, ws, name);
+      }
+      if (!wb.SheetNames.length) { toast("No values to export yet.", "error"); return; }
+      XLSX.writeFile(wb, "partpilot-values-template.xlsx");
+      toast("Template downloaded — one sheet per segment", "success");
     } catch (e) { toast((e as Error).message, "error"); }
   };
 
-  const setCol = (i: number, t: Target) => setMap((m) => ({ ...m, [i]: t }));
-  const resolveSeg = (cell: string) => {
-    const n = norm(cell);
-    const d = defs.find((x) => norm(x.label) === n || x.key.toLowerCase() === n);
-    return d?.key || null;
-  };
-
-  const built = useMemo(() => {
-    const segCol = Object.entries(map).find(([, t]) => t === "segment")?.[0];
-    const codeCol = Object.entries(map).find(([, t]) => t === "code")?.[0];
-    const descCol = Object.entries(map).find(([, t]) => t === "description")?.[0];
-    const modelCols = Object.entries(map).filter(([, t]) => t.startsWith("model:")).map(([i, t]) => ({ idx: Number(i), model: (t as string).slice(6) }));
-    const out: { segmentKey: string; code: string; description: string; modelDescriptions: Record<string, string> }[] = [];
-    let carry = "";
-    for (const row of dataRows) {
-      let seg = defaultSeg;
-      if (segCol !== undefined) {
-        const cell = String(row[Number(segCol)] ?? "").trim();
-        if (cell) { const k = resolveSeg(cell); if (k) carry = k; }
-        seg = carry || defaultSeg;
-      }
+  const buildFromSheet = (sheet: ParsedSheet, m: Record<number, Target>, defSeg: string, useSegCol: boolean): VRow[] => {
+    const segCol = useSegCol ? Object.entries(m).find(([, t]) => t === "segment")?.[0] : undefined;
+    const codeCol = Object.entries(m).find(([, t]) => t === "code")?.[0];
+    const descCol = Object.entries(m).find(([, t]) => t === "description")?.[0];
+    const modelCols = Object.entries(m).filter(([, t]) => t.startsWith("model:")).map(([i, t]) => ({ idx: Number(i), model: (t as string).slice(6) }));
+    const out: VRow[] = []; let carry = "";
+    for (const row of sheet.rows) {
+      let seg = defSeg;
+      if (segCol !== undefined) { const cell = String(row[Number(segCol)] ?? "").trim(); if (cell) { const k = resolveSegByCell(cell); if (k) carry = k; } seg = carry || defSeg; }
       const code = codeCol !== undefined ? String(row[Number(codeCol)] ?? "").trim() : "";
       if (!seg || !code) continue;
       const description = descCol !== undefined ? String(row[Number(descCol)] ?? "").trim() : "";
-      const modelDescriptions: Record<string, string> = {};
-      for (const mc of modelCols) { const v = String(row[mc.idx] ?? "").trim(); if (v) modelDescriptions[mc.model] = v; }
-      out.push({ segmentKey: seg, code, description, modelDescriptions });
+      const md: Record<string, string> = {};
+      for (const mc of modelCols) { const v = String(row[mc.idx] ?? "").trim(); if (v) md[mc.model] = v; }
+      out.push({ segmentKey: seg, code, description, modelDescriptions: md });
     }
     return out;
-  }, [map, defaultSeg, dataRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
 
+  const cur = sheets.find((s) => s.name === sheetName);
+  const perSheetInfo = useMemo(() => sheets.map((s) => {
+    const seg = resolveSegByName(s.name);
+    const rows = seg ? buildFromSheet(s, computeMap(s.headers), seg, false) : [];
+    return { name: s.name, seg, count: rows.length, rows };
+  }), [sheets]); // eslint-disable-line react-hooks/exhaustive-deps
+  const builtSingle = useMemo(() => (cur ? buildFromSheet(cur, map, defaultSeg, true) : []), [cur, map, defaultSeg]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const built = perSheet ? perSheetInfo.flatMap((p) => p.rows) : builtSingle;
   const withModels = built.filter((r) => Object.keys(r.modelDescriptions).length).length;
-  const hasCode = Object.values(map).includes("code");
+  const canImport = built.length > 0;
 
   const runImport = async () => {
-    if (!built.length) { toast("Nothing to import — map a Code column and a Segment (or set a default).", "error"); return; }
+    if (!canImport) { toast("Nothing to import — check your sheet/column mapping.", "error"); return; }
     setBusy(true); setResult(null);
     try {
       const res = await api.post<typeof result>("/segments/import-value-descriptions", { rows: built });
@@ -338,19 +337,18 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
       toast(`${res!.updated} updated · ${res!.created} added · ${res!.withModels} with model meanings`, "success");
     } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); }
   };
-
-  const TARGET_LABEL: Record<string, string> = { ignore: "Ignore", segment: "Segment (section)", code: "Code", description: "Description" };
+  const setCol = (i: number, t: Target) => setMap((m) => ({ ...m, [i]: t }));
 
   return (
-    <Modal title="Import from Excel — map your columns" onClose={onClose}
+    <Modal title="Import from Excel" onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Close</button>
-        <button className="btn primary" onClick={runImport} disabled={busy || !built.length || !hasCode}>{busy ? "Importing…" : `Import ${built.length} value(s)`}</button>
+        <button className="btn primary" onClick={runImport} disabled={busy || !canImport}>{busy ? "Importing…" : `Import ${built.length} value(s)`}</button>
       </>}>
       <div className="grid" style={{ gap: 14 }}>
         <div className="insight info">
           <div className="t">How it works</div>
-          <div className="d">Upload any spreadsheet, then tell us what each column is: <b>Code</b>, <b>Description</b>, or a <b>product model</b> (its cell becomes that model's meaning). Set a <b>default segment</b> for the rows, or map a <b>Segment</b> column (blank cells carry down for grouped sheets). Existing codes are updated, new ones added.</div>
+          <div className="d">Download the template (one tab per segment), fill in the model columns, and re-upload — every tab imports to its segment automatically. Or upload any sheet and map its columns yourself. Existing codes are updated, new ones added.</div>
         </div>
 
         <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
@@ -360,61 +358,79 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
           <button className="btn" onClick={downloadTemplate}>⬇ Download template</button>
         </div>
 
-        {fileName && (
-          <div className="flex" style={{ gap: 12, flexWrap: "wrap" }}>
-            <span className="muted" style={{ fontSize: 12.5 }}><b>{fileName}</b></span>
-            {sheetNames.length > 1 && (
-              <label className="flex" style={{ gap: 6, fontSize: 12.5 }}>Sheet:
-                <select className="select" style={{ width: 200 }} value={sheet} onChange={(e) => { void loadSheet(wb, e.target.value); }}>
-                  {sheetNames.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+        {sheets.length > 0 && (<>
+          <div className="flex" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <span className="muted" style={{ fontSize: 12.5 }}><b>{fileName}</b> · {sheets.length} sheet(s)</span>
+            {sheets.length > 1 && (
+              <label className="flex" style={{ gap: 6, fontSize: 12.5 }}>
+                <input type="checkbox" checked={perSheet} onChange={(e) => setPerSheet(e.target.checked)} /> One segment per sheet (import all tabs)
               </label>
             )}
-            <label className="flex" style={{ gap: 6, fontSize: 12.5 }}>Default segment:
-              <select className="select" style={{ width: 200 }} value={defaultSeg} onChange={(e) => setDefaultSeg(e.target.value)}>
-                <option value="">— none —</option>
-                {defs.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-              </select>
-            </label>
           </div>
-        )}
 
-        {headers.length > 0 && (
-          <div className="table-wrap" style={{ maxHeight: 320, overflowY: "auto" }}>
-            <table className="tbl">
-              <thead><tr><th>Column</th><th>Sample value</th><th>Maps to</th></tr></thead>
-              <tbody>
-                {headers.map((h, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 600 }}>{h || <span className="muted">(blank)</span>}</td>
-                    <td className="muted" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(dataRows.find((r) => String(r[i] ?? "").trim())?.[i] ?? "")}</td>
-                    <td>
-                      <select className="select" value={map[i] || "ignore"} onChange={(e) => setCol(i, e.target.value as Target)}>
-                        <option value="ignore">Ignore</option>
-                        <option value="segment">Segment (section)</option>
-                        <option value="code">Code</option>
-                        <option value="description">Description</option>
-                        <optgroup label="Product-model meaning">
-                          {models.map((m) => <option key={m.code} value={`model:${m.code}`}>{m.code} — {m.description}</option>)}
-                        </optgroup>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {headers.length > 0 && (
-          <div className={"insight " + (hasCode && built.length ? "success" : "warning")}>
-            <div className="d">
-              {!hasCode ? "Map one column to Code to continue." :
-                <><b>{built.length}</b> value(s) ready — <b>{withModels}</b> with per-model meanings.
-                  {built.length > 0 && <> First: <span className="mono">{label(built[0].segmentKey, defs)} · {built[0].code}</span></>}</>}
+          {perSheet ? (
+            <div className="table-wrap" style={{ maxHeight: 320, overflowY: "auto" }}>
+              <table className="tbl">
+                <thead><tr><th>Sheet</th><th>Segment</th><th style={{ textAlign: "right" }}>Values</th></tr></thead>
+                <tbody>
+                  {perSheetInfo.map((p) => (
+                    <tr key={p.name}>
+                      <td style={{ fontWeight: 600 }}>{p.name}</td>
+                      <td>{p.seg ? <span className="badge green">{label(p.seg, defs)}</span> : <span className="badge amber">not matched — skipped</span>}</td>
+                      <td style={{ textAlign: "right" }} className="muted">{p.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
+          ) : (<>
+            <div className="flex" style={{ gap: 12, flexWrap: "wrap" }}>
+              {sheets.length > 1 && (
+                <label className="flex" style={{ gap: 6, fontSize: 12.5 }}>Sheet:
+                  <select className="select" style={{ width: 200 }} value={sheetName} onChange={(e) => { setSheetName(e.target.value); const s = sheets.find((x) => x.name === e.target.value); if (s) { setMap(computeMap(s.headers)); setDefaultSeg(resolveSegByName(s.name) || defaultSeg); } }}>
+                    {sheets.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                  </select>
+                </label>
+              )}
+              <label className="flex" style={{ gap: 6, fontSize: 12.5 }}>Default segment:
+                <select className="select" style={{ width: 200 }} value={defaultSeg} onChange={(e) => setDefaultSeg(e.target.value)}>
+                  <option value="">— none —</option>
+                  {defs.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+                </select>
+              </label>
+            </div>
+            {cur && (
+              <div className="table-wrap" style={{ maxHeight: 300, overflowY: "auto" }}>
+                <table className="tbl">
+                  <thead><tr><th>Column</th><th>Sample</th><th>Maps to</th></tr></thead>
+                  <tbody>
+                    {cur.headers.map((h, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{h || <span className="muted">(blank)</span>}</td>
+                        <td className="muted" style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(cur.rows.find((r) => String(r[i] ?? "").trim())?.[i] ?? "")}</td>
+                        <td>
+                          <select className="select" value={map[i] || "ignore"} onChange={(e) => setCol(i, e.target.value as Target)}>
+                            <option value="ignore">Ignore</option>
+                            <option value="segment">Segment (section)</option>
+                            <option value="code">Code</option>
+                            <option value="description">Description</option>
+                            <optgroup label="Product-model meaning">
+                              {models.map((m) => <option key={m.code} value={`model:${m.code}`}>{m.code} — {m.description}</option>)}
+                            </optgroup>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>)}
+
+          <div className={"insight " + (canImport ? "success" : "warning")}>
+            <div className="d">{canImport ? <><b>{built.length}</b> value(s) ready — <b>{withModels}</b> with per-model meanings.</> : "Nothing mapped yet — pick a Code column (single-sheet) or make sure sheet names match segments."}</div>
           </div>
-        )}
+        </>)}
 
         {result && (
           <div className="insight success"><div className="t">Import complete</div>
