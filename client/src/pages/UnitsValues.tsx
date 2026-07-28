@@ -273,6 +273,28 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
     } catch { toast("Could not read that file. Use .xlsx or .csv.", "error"); }
   };
 
+  // Pre-filled template in the importable shape: Segment · Code · Description +
+  // one column per product model (a model's description as the header, so the
+  // importer auto-maps it back). Existing per-model meanings are filled in.
+  const downloadTemplate = async () => {
+    try {
+      const all = await api.get<SegmentValue[]>("/segments/values" + qs({ segmentKey: "all" }));
+      const XLSX = await import("xlsx");
+      const modelHeaders = models.map((m) => m.description || m.code);
+      const data = all.map((v) => {
+        const row: Record<string, string> = { Segment: label(v.segment_key, defs), Code: v.code, Description: v.description || "" };
+        models.forEach((m) => { row[m.description || m.code] = (v.model_descriptions && v.model_descriptions[m.code]) || ""; });
+        return row;
+      });
+      const ws = XLSX.utils.json_to_sheet(data, { header: ["Segment", "Code", "Description", ...modelHeaders] });
+      ws["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 42 }, ...modelHeaders.map(() => ({ wch: 22 }))];
+      const wbk = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wbk, ws, "Value Descriptions");
+      XLSX.writeFile(wbk, "partpilot-values-template.xlsx");
+      toast(`Template with ${data.length} rows downloaded`, "success");
+    } catch (e) { toast((e as Error).message, "error"); }
+  };
+
   const setCol = (i: number, t: Target) => setMap((m) => ({ ...m, [i]: t }));
   const resolveSeg = (cell: string) => {
     const n = norm(cell);
@@ -331,9 +353,12 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
           <div className="d">Upload any spreadsheet, then tell us what each column is: <b>Code</b>, <b>Description</b>, or a <b>product model</b> (its cell becomes that model's meaning). Set a <b>default segment</b> for the rows, or map a <b>Segment</b> column (blank cells carry down for grouped sheets). Existing codes are updated, new ones added.</div>
         </div>
 
-        <label className="btn primary" style={{ cursor: "pointer", alignSelf: "flex-start" }}>⬆ Choose file (.xlsx / .csv)
-          <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { void onFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
-        </label>
+        <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
+          <label className="btn primary" style={{ cursor: "pointer" }}>⬆ Choose file (.xlsx / .csv)
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { void onFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+          </label>
+          <button className="btn" onClick={downloadTemplate}>⬇ Download template</button>
+        </div>
 
         {fileName && (
           <div className="flex" style={{ gap: 12, flexWrap: "wrap" }}>
