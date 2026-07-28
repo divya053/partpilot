@@ -109,8 +109,16 @@ export default function Builder() {
     toast("Applied the most common values for this series", "success");
   };
 
-  const descFor = (segKey: string, code: string) =>
-    values[segKey]?.find((v) => v.code === code)?.description || "";
+  // Resolve a value's meaning for the currently-selected product model. Falls
+  // back to the generic description when no model-specific meaning was imported.
+  const resolveDesc = (v: SegmentValue) => {
+    const model = form.productModel as string | undefined;
+    return (model && v.model_descriptions?.[model]) || v.description || "";
+  };
+  const descFor = (segKey: string, code: string) => {
+    const v = values[segKey]?.find((x) => x.code === code);
+    return v ? resolveDesc(v) : "";
+  };
 
   const reset = () => setForm({ status: "active", productStage: "stocked" });
   const copy = () => { navigator.clipboard.writeText(partNumber); toast("Part number copied", "success"); };
@@ -145,7 +153,7 @@ export default function Builder() {
       <Field key={s.key} label={s.label} required={!optional} hint={form[s.key] ? descFor(s.key, form[s.key]) : s.help}>
         <select className="select" value={form[s.key] ?? ""} onChange={(e) => set(s.key, e.target.value)}>
           {optional && <option value="">— None —</option>}
-          {opts.map((o) => <option key={o.id} value={o.code}>{o.code} — {o.description}</option>)}
+          {opts.map((o) => <option key={o.id} value={o.code}>{o.code} — {resolveDesc(o)}</option>)}
         </select>
       </Field>
     );

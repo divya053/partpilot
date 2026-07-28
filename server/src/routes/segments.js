@@ -11,6 +11,10 @@ const parse = (r) => {
   if (r && typeof r.applicable_products === "string") {
     try { r.applicable_products = JSON.parse(r.applicable_products); } catch { r.applicable_products = []; }
   }
+  if (r && typeof r.model_descriptions === "string") {
+    try { r.model_descriptions = JSON.parse(r.model_descriptions); } catch { r.model_descriptions = {}; }
+  }
+  if (r && r.model_descriptions == null) r.model_descriptions = {};
   return r;
 };
 
@@ -89,6 +93,49 @@ router.post("/values", requireCap("write"), async (req, res) => {
   const row = await one("SELECT * FROM segment_values WHERE id = ?", [result.insertId]);
   await logAudit(req, "Segment", "Created", `Added ${segmentKey} value ${code}`);
   res.status(201).json(parse(row));
+});
+
+// ─── Import the Excel "Value Descriptions" sheet (with per-model meanings) ────
+// Each value can mean different things per product model (e.g. Size "01" =
+// "Version 1" for Linear High Bay but "60 LEDs" for Strip Lights). The client
+// parses the sheet into rows { segmentKey, code, description, modelDescriptions:
+// { MODEL_CODE: meaning } }. We set the generic description + the per-model map;
+// applicable_products ("Used By") is left to the parts-based auto-detect.
+router.post("/import-value-descriptions", requireCap("write"), async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length) return res.status(400).json({ error: "No rows provided" });
+
+  let updated = 0, created = 0, withModels = 0;
+  const errors = [];
+  for (const [idx, r] of rows.entries()) {
+    const line = idx + 1;
+    try {
+      const segmentKey = String(r.segmentKey || "").trim();
+      const code = String(r.code || "").trim();
+      if (!segmentKey || !code) { errors.push({ row: line, error: "Missing segment key or code" }); continue; }
+      const description = (r.description ?? "").toString().trim();
+      const md = (r.modelDescriptions && typeof r.modelDescriptions === "object") ? r.modelDescriptions : {};
+      const mdJson = JSON.stringify(md);
+
+      const existing = await one("SELECT id FROM segment_values WHERE segment_key = ? AND code = ?", [segmentKey, code]);
+      if (existing) {
+        if (description) await pool.query("UPDATE segment_values SET description = ?, model_descriptions = ? WHERE id = ?", [description, mdJson, existing.id]);
+        else await pool.query("UPDATE segment_values SET model_descriptions = ? WHERE id = ?", [mdJson, existing.id]);
+        updated++;
+      } else {
+        await pool.query(
+          "INSERT INTO segment_values (segment_key, code, description, applicable_products, model_descriptions, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)",
+          [segmentKey, code, description || code, JSON.stringify([]), mdJson, idx],
+        );
+        created++;
+      }
+      if (Object.keys(md).length) withModels++;
+    } catch (err) {
+      errors.push({ row: line, error: err.message });
+    }
+  }
+  await logAudit(req, "Segment", "Imported", `Value Descriptions import — ${updated} updated, ${created} added, ${withModels} with per-model meanings`);
+  res.json({ updated, created, withModels, errors });
 });
 
 router.patch("/values/:id", requireCap("write"), async (req, res) => {

@@ -51,6 +51,7 @@ const STATEMENTS = [
     code VARCHAR(64) NOT NULL,
     description TEXT NOT NULL,
     applicable_products JSON,
+    model_descriptions JSON,
     sort_order INT NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     UNIQUE KEY segment_values_key_code (segment_key, code)
@@ -145,4 +146,5 @@ export async function migrate() {
   await ensureColumn("part_numbers", "vendor_spec_sheet", "vendor_spec_sheet TEXT");
   await ensureColumn("part_numbers", "ikio_spec_sheet", "ikio_spec_sheet TEXT");
   await ensureColumn("part_numbers", "image", "image TEXT");
+  await ensureColumn("segment_values", "model_descriptions", "model_descriptions JSON");
 }
