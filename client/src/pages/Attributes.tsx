@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
+import { Modal } from "../components/Modal";
 import { Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
@@ -8,6 +9,7 @@ import { useAuth } from "../lib/auth";
 import { SegmentDef } from "../lib/types";
 
 type Edit = { label?: string; help?: string };
+type AttrRow = { key: string; label: string; help: string };
 
 export default function Attributes() {
   const nav = useNavigate();
@@ -19,6 +21,13 @@ export default function Attributes() {
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false); // view-only until the user opts in
+
+  // Excel import (bulk update label/help by attribute key)
+  const [impOpen, setImpOpen] = useState(false);
+  const [impRows, setImpRows] = useState<AttrRow[]>([]);
+  const [impFile, setImpFile] = useState("");
+  const [impBusy, setImpBusy] = useState(false);
+  const [impResult, setImpResult] = useState<{ updated: number } | null>(null);
 
   const load = () => api.get<SegmentDef[]>("/segments/summary").then(setDefs).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -54,10 +63,56 @@ export default function Attributes() {
 
   const toggleEdit = () => { setEditMode((v) => !v); setEdits({}); };
 
+  // ─── Excel bulk update (Key · Attribute · Help) ───────────────────────────
+  const downloadTemplate = async () => {
+    if (!defs) return;
+    try {
+      const XLSX = await import("xlsx");
+      const data = defs.map((d) => ({ Key: d.key, Attribute: d.label, Help: d.help || "" }));
+      const ws = XLSX.utils.json_to_sheet(data, { header: ["Key", "Attribute", "Help"] });
+      ws["!cols"] = [{ wch: 20 }, { wch: 26 }, { wch: 60 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Attributes");
+      XLSX.writeFile(wb, "partpilot-attributes-template.xlsx");
+      toast(`Template with ${data.length} attributes downloaded`, "success");
+    } catch (e) { toast((e as Error).message, "error"); }
+  };
+  const onImpFile = async (file?: File | null) => {
+    if (!file || !defs) return;
+    setImpResult(null);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const grid = XLSX.utils.sheet_to_json<any[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false, blankrows: false });
+      const headers = (grid[0] || []).map((c: any) => String(c).trim().toLowerCase());
+      const keyCol = headers.findIndex((h: string) => /key/.test(h));
+      const labelCol = headers.findIndex((h: string) => /(attribute|label|name)/.test(h) && !/key/.test(h));
+      const helpCol = headers.findIndex((h: string) => /(help|desc)/.test(h));
+      const rows: AttrRow[] = [];
+      for (const r of grid.slice(1)) {
+        const raw = keyCol >= 0 ? String(r[keyCol] ?? "").trim() : "";
+        const d = defs.find((x) => x.key.toLowerCase() === raw.toLowerCase() || (x.label || "").toLowerCase() === raw.toLowerCase());
+        if (!d) continue;
+        rows.push({ key: d.key, label: labelCol >= 0 ? String(r[labelCol] ?? "").trim() || d.label : d.label, help: helpCol >= 0 ? String(r[helpCol] ?? "").trim() : (d.help || "") });
+      }
+      if (!rows.length) { toast("No matching attributes found. Keep the Key column from the template.", "error"); return; }
+      setImpRows(rows); setImpFile(file.name);
+    } catch { toast("Could not read that file. Use the .xlsx template.", "error"); }
+  };
+  const runImport = async () => {
+    if (!impRows.length) return;
+    setImpBusy(true); setImpResult(null);
+    try {
+      const r = await api.post<{ updated: number }>("/segments/def/bulk", { rows: impRows });
+      setImpResult(r); toast(`${r.updated} attribute(s) updated`, "success"); load();
+    } catch (e) { toast((e as Error).message, "error"); } finally { setImpBusy(false); }
+  };
+
   return (
     <Layout title="Attributes" subtitle="The segments that make up every IKIO part number, in order."
       actions={editable && <>
         {editMode && dirty.length > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all changes (${dirty.length})`}</button>}
+        {!editMode && <button className="btn" onClick={() => { setImpRows([]); setImpFile(""); setImpResult(null); setImpOpen(true); }}>⬆ Import Excel</button>}
         <button className={"btn" + (editMode ? " danger" : "")} onClick={toggleEdit}>{editMode ? "Done" : "✎ Edit attributes"}</button>
       </>}>
       <div className="card">
@@ -102,6 +157,29 @@ export default function Attributes() {
       <div className="muted" style={{ marginTop: 12, fontSize: 12.5 }}>
         Type &amp; add-on letter are fixed by the part-number format. Edit an attribute's <b>values</b> (codes, descriptions, per-model meanings) in <a className="link" style={{ textDecoration: "underline", cursor: "pointer" }} onClick={() => nav("/values")}>Units &amp; Values</a>.
       </div>
+
+      {impOpen && (
+        <Modal title="Import attributes from Excel" onClose={() => setImpOpen(false)}
+          footer={<>
+            <button className="btn" onClick={() => setImpOpen(false)}>Close</button>
+            <button className="btn primary" onClick={runImport} disabled={impBusy || impRows.length === 0}>{impBusy ? "Importing…" : `Update ${impRows.length || ""} attribute(s)`}</button>
+          </>}>
+          <div className="grid" style={{ gap: 12 }}>
+            <div className="insight info">
+              <div className="t">Bulk-update attribute names &amp; help text</div>
+              <div className="d">Download the template, edit the <b>Attribute</b> (name) and <b>Help</b> columns, and re-upload. Rows are matched by <span className="mono">Key</span>. Type and add-on letter can't be changed here.</div>
+            </div>
+            <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button className="btn" onClick={downloadTemplate}>⬇ Download template</button>
+              <label className="btn primary" style={{ cursor: "pointer" }}>⬆ Upload edited sheet
+                <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { void onImpFile(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+              </label>
+            </div>
+            {impFile && <div className="muted" style={{ fontSize: 12.5 }}><b>{impFile}</b> — {impRows.length} matching attribute(s) ready.</div>}
+            {impResult && <div className="insight success"><div className="d">{impResult.updated} attribute(s) updated.</div></div>}
+          </div>
+        </Modal>
+      )}
     </Layout>
   );
 }

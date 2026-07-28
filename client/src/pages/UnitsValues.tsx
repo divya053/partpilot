@@ -276,19 +276,21 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
       const wb = XLSX.utils.book_new();
       const used = new Set<string>();
       for (const d of defs) {
-        if (d.key === "productModel") continue;
         const vals = byKey[d.key] || [];
         if (!vals.length) continue;
+        // Product Model is the models themselves — just Code + Description, no per-model columns.
+        const isModelSeg = d.key === "productModel";
         const data = vals.map((v) => {
           const row: Record<string, string> = { Code: v.code, Description: v.description || "" };
-          models.forEach((m) => { row[m.description || m.code] = (v.model_descriptions && v.model_descriptions[m.code]) || ""; });
+          if (!isModelSeg) models.forEach((m) => { row[m.description || m.code] = (v.model_descriptions && v.model_descriptions[m.code]) || ""; });
           return row;
         });
         let name = sanitizeSheet(d.label) || d.key, n = 2;
         while (used.has(name.toLowerCase())) { name = `${sanitizeSheet(d.label).slice(0, 28)} ${n}`; n++; }
         used.add(name.toLowerCase());
-        const ws = XLSX.utils.json_to_sheet(data, { header: ["Code", "Description", ...modelHeaders] });
-        ws["!cols"] = [{ wch: 12 }, { wch: 42 }, ...modelHeaders.map(() => ({ wch: 22 }))];
+        const header = isModelSeg ? ["Code", "Description"] : ["Code", "Description", ...modelHeaders];
+        const ws = XLSX.utils.json_to_sheet(data, { header });
+        ws["!cols"] = isModelSeg ? [{ wch: 12 }, { wch: 42 }] : [{ wch: 12 }, { wch: 42 }, ...modelHeaders.map(() => ({ wch: 22 }))];
         XLSX.utils.book_append_sheet(wb, ws, name);
       }
       if (!wb.SheetNames.length) { toast("No values to export yet.", "error"); return; }
