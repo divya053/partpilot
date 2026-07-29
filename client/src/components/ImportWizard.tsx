@@ -50,14 +50,25 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
     } catch { toast("Could not read that file. Use .xlsx or .csv.", "error"); }
   };
 
+  // Template is pre-filled with the current records so you can edit any cell and
+  // re-upload — rows are matched back by the key column and updated.
   const downloadTemplate = async () => {
-    const XLSX = await import("xlsx");
-    const ws = XLSX.utils.aoa_to_sheet([fields.map((f) => f.label)]);
-    ws["!cols"] = fields.map(() => ({ wch: 20 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, singular);
-    XLSX.writeFile(wb, `partpilot-${singular.toLowerCase()}-template.xlsx`);
-    toast("Template downloaded", "success");
+    try {
+      const XLSX = await import("xlsx");
+      let existing: Record<string, unknown>[] = [];
+      try { existing = await api.get<Record<string, unknown>[]>(endpoint); } catch { /* export headers only */ }
+      const header = fields.map((f) => f.label);
+      const body = existing.map((r) => fields.map((f) => {
+        const v = r[f.key];
+        return Array.isArray(v) ? v.join("|") : (v == null ? "" : String(v));
+      }));
+      const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+      ws["!cols"] = fields.map(() => ({ wch: 20 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, singular);
+      XLSX.writeFile(wb, `partpilot-${singular.toLowerCase()}-template.xlsx`);
+      toast(`Template with ${existing.length} row(s) downloaded`, "success");
+    } catch (e) { toast((e as Error).message, "error"); }
   };
 
   const built = useMemo(() => {
