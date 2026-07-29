@@ -67,6 +67,45 @@ export function crudRouter(cfg) {
     res.status(201).json(parseRow(row));
   });
 
+  // BULK import — insert new rows, update existing ones matched by a key column
+  // (default: the search column, e.g. name). Each row is { column: value }.
+  router.post("/bulk", requireCap("write"), async (req, res) => {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return res.status(400).json({ error: "No rows provided" });
+    const reqKey = req.body?.keyColumn;
+    const keyCol = reqKey && columns.includes(reqKey) ? reqKey
+      : (searchColumn && columns.includes(searchColumn) ? searchColumn : null);
+
+    let created = 0, updated = 0;
+    const errors = [];
+    for (const [idx, raw] of rows.entries()) {
+      try {
+        const cols = columns.filter((c) => c in raw && raw[c] !== undefined && raw[c] !== "");
+        if (!cols.length) continue;
+        const val = (c) => (jsonColumns.includes(c) ? JSON.stringify(raw[c]) : raw[c]);
+
+        let existing = null;
+        if (keyCol && raw[keyCol] != null && raw[keyCol] !== "") {
+          existing = await one(`SELECT id FROM ${table} WHERE ${keyCol} = ? LIMIT 1`, [raw[keyCol]]);
+        }
+        if (existing) {
+          const setCols = cols.filter((c) => c !== keyCol);
+          if (setCols.length) {
+            await pool.query(`UPDATE ${table} SET ${setCols.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`, [...setCols.map(val), existing.id]);
+          }
+          updated++;
+        } else {
+          await pool.query(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, cols.map(val));
+          created++;
+        }
+      } catch (err) {
+        errors.push({ row: idx + 1, error: err.sqlMessage || err.message });
+      }
+    }
+    await logAudit(req, module, "Imported", `Bulk import — ${created} added, ${updated} updated`);
+    res.json({ created, updated, errors });
+  });
+
   // UPDATE (partial)
   router.patch("/:id", requireCap("write"), async (req, res) => {
     const keys = columns.filter((c) => c in req.body);

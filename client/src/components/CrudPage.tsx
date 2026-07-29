@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Layout } from "./Layout";
 import { Modal } from "./Modal";
 import { Field, StatusBadge, Spinner, Empty, useConfirm } from "./ui";
+import { ImportWizard } from "./ImportWizard";
 import { api, qs } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
@@ -9,7 +10,7 @@ import { useAuth } from "../lib/auth";
 export interface FieldDef {
   key: string;
   label: string;
-  type?: "text" | "textarea" | "select" | "email";
+  type?: "text" | "textarea" | "select" | "email" | "list";
   options?: { value: string; label: string }[];
   required?: boolean;
   hint?: string;
@@ -35,6 +36,7 @@ export function CrudPage<T extends { id: number }>({
   const [status, setStatus] = useState("all");
   const [editing, setEditing] = useState<Partial<T> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -68,7 +70,10 @@ export function CrudPage<T extends { id: number }>({
 
   return (
     <Layout title={title} subtitle={subtitle}
-      actions={can("write") && <button className="btn primary" onClick={openNew}>+ Add {singular}</button>}>
+      actions={can("write") && <>
+        <button className="btn" onClick={() => setImportOpen(true)}>⬆ Import</button>
+        <button className="btn primary" onClick={openNew}>+ Add {singular}</button>
+      </>}>
       <div className="card">
         <div className="card-pad" style={{ paddingBottom: 0 }}>
           <div className="toolbar">
@@ -131,6 +136,10 @@ export function CrudPage<T extends { id: number }>({
             ))}
           </div>
         </Modal>
+      )}
+      {importOpen && (
+        <ImportWizard title={title} endpoint={endpoint} singular={singular} fields={fields}
+          onClose={() => setImportOpen(false)} onDone={load} />
       )}
       {node}
     </Layout>

@@ -2,10 +2,18 @@ import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { Modal } from "../components/Modal";
 import { Field, Spinner, Empty, useConfirm } from "../components/ui";
+import { ImportWizard } from "../components/ImportWizard";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { Template, SegmentDef } from "../lib/types";
+import type { FieldDef } from "../components/CrudPage";
+
+const IMPORT_FIELDS: FieldDef[] = [
+  { key: "name", label: "Name", required: true },
+  { key: "description", label: "Description" },
+  { key: "segments", label: "Segments", type: "list", hint: "Segment keys separated by | (e.g. company|productModel|cct)" },
+];
 
 export default function Templates() {
   const toast = useToast();
@@ -16,6 +24,7 @@ export default function Templates() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = () => { setLoading(true); api.get<Template[]>("/templates").then(setRows).catch(() => {}).finally(() => setLoading(false)); };
   useEffect(() => { load(); api.get<{ all: SegmentDef[] }>("/segments/meta").then((m) => setDefs(m.all)).catch(() => {}); }, []);
@@ -36,7 +45,10 @@ export default function Templates() {
 
   return (
     <Layout title="Templates" subtitle="Preset segment layouts to speed up the builder."
-      actions={can("write") && <button className="btn primary" onClick={() => setEditing({ name: "", description: "", segments: [] })}>+ New Template</button>}>
+      actions={can("write") && <>
+        <button className="btn" onClick={() => setImportOpen(true)}>⬆ Import</button>
+        <button className="btn primary" onClick={() => setEditing({ name: "", description: "", segments: [] })}>+ New Template</button>
+      </>}>
       <div className="card">
         {loading ? <Spinner /> : rows.length === 0 ? <Empty title="No templates yet" /> : (
           <div className="table-wrap">
@@ -80,6 +92,7 @@ export default function Templates() {
           </div>
         </Modal>
       )}
+      {importOpen && <ImportWizard title="Templates" endpoint="/templates" singular="Template" fields={IMPORT_FIELDS} onClose={() => setImportOpen(false)} onDone={load} />}
       {node}
     </Layout>
   );
