@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
+import { useAuth } from "../lib/auth";
 import type { FieldDef } from "./CrudPage";
 
-type ImportResult = { created: number; updated: number; errors: { row: number; error: string }[] };
+type ImportResult = { created: number; updated: number; deleted?: number; errors: { row: number; error: string }[] };
 
 /**
  * Generic spreadsheet import with column mapping (Freshsales-style). Works for
@@ -16,12 +17,15 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
   title: string; endpoint: string; singular: string; fields: FieldDef[]; keyColumn?: string; onClose: () => void; onDone: () => void;
 }) {
   const toast = useToast();
+  const { can } = useAuth();
   const [fileName, setFileName] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const [map, setMap] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [syncDelete, setSyncDelete] = useState(false);
+  const [current, setCurrent] = useState<Record<string, unknown>[]>([]);
 
   const norm = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
   const key = keyColumn || (fields.find((f) => f.key === "name") ? "name" : fields[0]?.key) || "";
@@ -47,6 +51,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
       const grid = XLSX.utils.sheet_to_json<any[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false, blankrows: false });
       const hdrs = (grid[0] || []).map((c: any) => String(c).trim());
       setHeaders(hdrs); setRows(grid.slice(1) as string[][]); setFileName(file.name); autoMap(hdrs);
+      api.get<Record<string, unknown>[]>(endpoint).then(setCurrent).catch(() => setCurrent([]));
     } catch { toast("Could not read that file. Use .xlsx or .csv.", "error"); }
   };
 
@@ -91,13 +96,23 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
   const hasKey = Object.values(map).includes(key);
   const canImport = built.length > 0 && hasKey;
 
+  // Records in the system whose key is NOT in the uploaded file (would be deleted in sync mode).
+  const missingCount = useMemo(() => {
+    if (!hasKey) return 0;
+    const present = new Set(built.map((r) => norm(r[key])));
+    return current.filter((r) => { const v = r[key]; return v != null && v !== "" && !present.has(norm(v)); }).length;
+  }, [current, built, hasKey, key]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const runImport = async () => {
     if (!canImport) return;
+    if (syncDelete && missingCount > 0) {
+      if (!window.confirm(`Sync will DELETE ${missingCount} ${title.toLowerCase()} that are not in this file. This cannot be undone.\n\nContinue?`)) return;
+    }
     setBusy(true); setResult(null);
     try {
-      const res = await api.post<ImportResult>(`${endpoint}/bulk`, { rows: built, keyColumn: key });
+      const res = await api.post<ImportResult>(`${endpoint}/bulk`, { rows: built, keyColumn: key, deleteMissing: syncDelete });
       setResult(res);
-      toast(`${res.created} added · ${res.updated} updated`, "success");
+      toast(`${res.created} added · ${res.updated} updated${res.deleted ? ` · ${res.deleted} deleted` : ""}`, "success");
       onDone();
     } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); }
   };
@@ -147,7 +162,20 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
             <div className="d">{!hasKey ? `Map a column to ${keyLabel} (the match key) to continue.` : <><b>{built.length}</b> row(s) ready to import.</>}</div>
           </div>
         )}
-        {result && <div className="insight success"><div className="t">Done</div><div className="d">{result.created} added · {result.updated} updated{result.errors.length ? ` · ${result.errors.length} error(s)` : ""}</div></div>}
+
+        {headers.length > 0 && hasKey && can("delete") && (
+          <label className={"insight " + (syncDelete ? "danger" : "")} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+            <input type="checkbox" checked={syncDelete} onChange={(e) => setSyncDelete(e.target.checked)} style={{ marginTop: 3 }} />
+            <div>
+              <div className="t">Sync — mirror this file exactly</div>
+              <div className="d">Also <b>delete</b> records that are in the system but not in this file.
+                {syncDelete && missingCount > 0 ? <> <b style={{ color: "var(--red)" }}>{missingCount} {title.toLowerCase()} will be deleted.</b></> : syncDelete ? <> Nothing extra to delete.</> : null}
+              </div>
+            </div>
+          </label>
+        )}
+
+        {result && <div className="insight success"><div className="t">Done</div><div className="d">{result.created} added · {result.updated} updated{result.deleted ? ` · ${result.deleted} deleted` : ""}{result.errors.length ? ` · ${result.errors.length} error(s)` : ""}</div></div>}
       </div>
     </Modal>
   );

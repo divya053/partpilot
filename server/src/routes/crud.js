@@ -1,6 +1,6 @@
 import express from "express";
 import { pool, q, one } from "../db.js";
-import { requireCap } from "../auth.js";
+import { requireCap, can } from "../auth.js";
 import { logAudit } from "../audit.js";
 
 /**
@@ -75,8 +75,15 @@ export function crudRouter(cfg) {
     const reqKey = req.body?.keyColumn;
     const keyCol = reqKey && columns.includes(reqKey) ? reqKey
       : (searchColumn && columns.includes(searchColumn) ? searchColumn : null);
+    // "Sync" mode: delete records whose key isn't in the uploaded file. Destructive,
+    // so it needs the delete capability and a valid key column.
+    const deleteMissing = !!req.body?.deleteMissing;
+    if (deleteMissing) {
+      if (!keyCol) return res.status(400).json({ error: "Sync needs a key column mapped." });
+      if (!can(req.user?.role, "delete")) return res.status(403).json({ error: "Your role can't delete records." });
+    }
 
-    let created = 0, updated = 0;
+    let created = 0, updated = 0, deleted = 0;
     const errors = [];
     for (const [idx, raw] of rows.entries()) {
       try {
@@ -102,8 +109,20 @@ export function crudRouter(cfg) {
         errors.push({ row: idx + 1, error: err.sqlMessage || err.message });
       }
     }
-    await logAudit(req, module, "Imported", `Bulk import — ${created} added, ${updated} updated`);
-    res.json({ created, updated, errors });
+
+    if (deleteMissing) {
+      const presentKeys = [...new Set(rows.map((r) => r[keyCol]).filter((k) => k != null && k !== ""))];
+      if (presentKeys.length) {
+        const [del] = await pool.query(
+          `DELETE FROM ${table} WHERE ${keyCol} NOT IN (${presentKeys.map(() => "?").join(", ")})`,
+          presentKeys,
+        );
+        deleted = del.affectedRows || 0;
+      }
+    }
+
+    await logAudit(req, module, "Imported", `Bulk import — ${created} added, ${updated} updated${deleted ? `, ${deleted} deleted (sync)` : ""}`);
+    res.json({ created, updated, deleted, errors });
   });
 
   // UPDATE (partial)
