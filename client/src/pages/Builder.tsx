@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { Field, StatusBadge, FileUpload } from "../components/ui";
@@ -210,6 +210,62 @@ export default function Builder() {
     );
   };
 
+  // ─── Version vs. Variant split ──────────────────────────────────────────────
+  // The Excel "Generation / Series / Variant Type" column packs two kinds of
+  // codes into one part-number slot: numeric series/generations (1–10) and
+  // lettered variant types (0A, SC, FC, AT, A19…). We surface them as TWO
+  // dropdowns — Version / Series and Variant Type — but both write the SAME
+  // `versionVariant` slot, so exactly one is ever set (picking in one clears the
+  // other). Whichever dropdown has no options for the chosen model is hidden, so
+  // a High Bay shows only Version and a Wallpack shows only Variant Type.
+  const isVersionCode = (code: string) => /^\d+$/.test(String(code));
+  const renderVersionVariant = () => {
+    const s = meta.core.find((x) => x.key === "versionVariant");
+    if (!s) return null;
+    const opts = optsFor("versionVariant");
+    const nums = opts.filter((o) => isVersionCode(o.code));
+    const lets = opts.filter((o) => !isVersionCode(o.code));
+    const cur = String(form.versionVariant || "");
+    const modelChosen = !!form.productModel;
+    const curIsNum = !!cur && isVersionCode(cur);
+    // Show a sub-dropdown when it has options for this model (or no model is
+    // chosen yet), and never hide the one holding the current selection.
+    const showNum = nums.length > 0 || !modelChosen || curIsNum;
+    const showLet = lets.length > 0 || !modelChosen || (!!cur && !curIsNum);
+    const isNext = sugg.nextField === "versionVariant" && !cur;
+    const fieldSugg = !cur ? sugg.suggestions.find((x) => x.key === "versionVariant") : null;
+
+    const sub = (label: string, help: string, subOpts: SegmentValue[], mine: boolean) => {
+      const value = mine ? cur : "";
+      const owns = fieldSugg && (isVersionCode(fieldSugg.code) === (label === "Version / Series"));
+      return (
+        <Field key={label} label={label + (isNext ? "  👉 next" : "")} hint={value ? descFor("versionVariant", value) : (isNext ? "Suggested next step — pick from below" : help)}>
+          <select className="select" value={value} onChange={(e) => set("versionVariant", e.target.value)}
+            style={isNext ? { borderColor: "var(--green)", boxShadow: "0 0 0 3px var(--green-50)" } : undefined}>
+            <option value="">— None —</option>
+            {subOpts.map((o) => <option key={o.id} value={o.code}>{resolveDesc(o) || o.code}</option>)}
+          </select>
+          {owns && (
+            <div className="flex" style={{ gap: 6, marginTop: 5, fontSize: 11.5, flexWrap: "wrap" }}>
+              <span className="muted">💡 Most used here:</span>
+              <button type="button" className="btn sm" style={{ padding: "2px 9px" }} onClick={() => set("versionVariant", fieldSugg!.code)}>
+                {descFor("versionVariant", fieldSugg!.code) || fieldSugg!.code}
+              </button>
+              <span className="muted">{fieldSugg!.count}/{sugg.basisCount}</span>
+            </div>
+          )}
+        </Field>
+      );
+    };
+
+    return (
+      <Fragment key="versionVariant">
+        {showNum && sub("Version / Series", "Numeric series / generation (1, 2, 3…)", nums, curIsNum)}
+        {showLet && sub("Variant Type", "Lettered type — Type A/B/C, Semi/Full cut-off, Architectural…", lets, !!cur && !curIsNum)}
+      </Fragment>
+    );
+  };
+
   return (
     <Layout title="Part Number Builder" subtitle="Create, manage and track part numbers for products."
       actions={<>
@@ -239,7 +295,7 @@ export default function Builder() {
               </div>
 
               <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-                {meta.core.map((s) => renderSegment(s))}
+                {meta.core.map((s) => s.key === "versionVariant" ? renderVersionVariant() : renderSegment(s))}
               </div>
 
               {/* Learned suggestions: most common values among this series' parts */}
