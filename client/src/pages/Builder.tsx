@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { buildPartNumber, partSegments } from "../lib/partNumber";
-import { SegmentDef, SegmentValue, Company, Category } from "../lib/types";
+import { SegmentDef, SegmentValue, Company, Category, Product } from "../lib/types";
 
 type Grouped = Record<string, SegmentValue[]>;
 
@@ -24,6 +24,7 @@ export default function Builder() {
   const [values, setValues] = useState<Grouped>({});
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [form, setForm] = useState<Record<string, any>>({ status: "active", productStage: "stocked", ...(prefill || {}) });
   const [saving, setSaving] = useState(false);
   const [explain, setExplain] = useState<string>("");
@@ -36,8 +37,9 @@ export default function Builder() {
       api.get<Grouped>("/segments/values/grouped"),
       api.get<Company[]>("/companies"),
       api.get<Category[]>("/categories"),
-    ]).then(([m, v, co, ca]) => {
-      setMeta(m); setValues(v); setCompanies(co); setCategories(ca);
+      api.get<Product[]>("/products"),
+    ]).then(([m, v, co, ca, pr]) => {
+      setMeta(m); setValues(v); setCompanies(co); setCategories(ca); setProducts(pr);
       setForm((f) => {
         const next = { ...f };
         // Prefill sensible defaults from first available value of each core segment.
@@ -53,6 +55,22 @@ export default function Builder() {
   }, [id]);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Picking a product from the catalog fills in its Category and Product Model
+  // (when the product's model code matches a real segment value), connecting the
+  // Products catalog to the builder. Typing a new name just sets the name.
+  const onProductName = (name: string) => {
+    const p = products.find((x) => x.name.toLowerCase() === name.trim().toLowerCase());
+    setForm((f) => {
+      const next: Record<string, any> = { ...f, productName: name };
+      if (p) {
+        if (p.category) next.productCategory = p.category;
+        if (p.model_code && (values.productModel || []).some((v) => v.code === p.model_code)) next.productModel = p.model_code;
+      }
+      return next;
+    });
+    if (p) toast(`Loaded “${p.name}” — category & model filled`, "success");
+  };
 
   const partNumber = useMemo(() => buildPartNumber(form), [form]);
   const chips = useMemo(() => partSegments(form), [form]);
@@ -305,7 +323,12 @@ export default function Builder() {
             <div className="card-head"><span className="step-badge">2</span><div><h3>Part Number Details</h3><div className="sub">Add product metadata, spec sheets and status for this part number.</div></div></div>
             <div className="card-pad">
               <div className="grid g2">
-                <Field label="Product Name" required><input className="input" value={form.productName ?? ""} onChange={(e) => set("productName", e.target.value)} placeholder="e.g. UFO High Bay 240W" /></Field>
+                <Field label="Product" required hint="Pick from your Products catalog (fills Category & Model) or type a new one">
+                  <input className="input" list="pp-products" value={form.productName ?? ""} onChange={(e) => onProductName(e.target.value)} placeholder="Pick or type a product…" />
+                  <datalist id="pp-products">
+                    {products.map((p) => <option key={p.id} value={p.name}>{[p.category, p.model_code].filter(Boolean).join(" · ")}</option>)}
+                  </datalist>
+                </Field>
                 <Field label="Category" required>
                   <select className="select" value={form.productCategory ?? ""} onChange={(e) => set("productCategory", e.target.value)}>
                     <option value="">Select category…</option>
