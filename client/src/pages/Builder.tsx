@@ -152,8 +152,8 @@ export default function Builder() {
     return (
       <Field key={s.key} label={s.label} required={!optional} hint={form[s.key] ? descFor(s.key, form[s.key]) : s.help}>
         <select className="select" value={form[s.key] ?? ""} onChange={(e) => set(s.key, e.target.value)}>
-          {optional && <option value="">— None —</option>}
-          {opts.map((o) => <option key={o.id} value={o.code}>{o.code} — {resolveDesc(o)}</option>)}
+          {optional && <option value="">— None (skip) —</option>}
+          {opts.map((o) => <option key={o.id} value={o.code}>{resolveDesc(o) || o.code}</option>)}
         </select>
       </Field>
     );
@@ -324,7 +324,9 @@ export default function Builder() {
             <div className="card-head"><h3>Part Number Summary</h3></div>
             <div className="card-pad">
               <div className="gen-code" style={{ marginBottom: 12 }}><div className="pn" style={{ fontSize: 15 }}>{partNumber}</div></div>
-              {chips.map((c, i) => <div key={i} className="kv"><span className="k">{c.label}</span><span className="v mono">{c.value}</span></div>)}
+              {[...meta.core, ...meta.optional].filter((s) => form[s.key]).map((s) => (
+                <div key={s.key} className="kv"><span className="k">{s.label}</span><span className="v" style={{ textAlign: "right", maxWidth: 190 }}>{descFor(s.key, form[s.key]) || form[s.key]}</span></div>
+              ))}
               <div className="kv"><span className="k">Status</span><span className="v"><StatusBadge status={form.status} /></span></div>
               {can("write") && <button className="btn primary" style={{ width: "100%", justifyContent: "center", marginTop: 14 }} onClick={save} disabled={saving || dup.duplicate} title={dup.duplicate ? "This part number already exists" : ""}>{saving ? "Saving…" : dup.duplicate ? "Duplicate — can't save" : id ? "Update Part Number" : "Save Part Number"}</button>}
             </div>
