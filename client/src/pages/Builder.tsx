@@ -147,13 +147,33 @@ export default function Builder() {
 
   if (!meta) return <Layout title="Part Number Builder"><div className="center-load"><div className="spinner" /></div></Layout>;
 
+  // Filter a segment's options to those that apply to the selected product model.
+  // "Applies" = the model is in the value's Used-By list, or it has a per-model
+  // meaning for this model. Values with no dependency data at all are always
+  // shown, and the current selection is never hidden — so you're never stranded.
+  const optsFor = (key: string): SegmentValue[] => {
+    const all = values[key] || [];
+    const model = String(form.productModel || "");
+    if (!model || key === "productModel" || key === "company") return all;
+    const filtered = all.filter((v) => {
+      const ap = v.applicable_products || [];
+      const md = v.model_descriptions || {};
+      const hasData = ap.length > 0 || Object.keys(md).length > 0;
+      const applies = ap.includes(model) || !!md[model];
+      return !hasData || applies || v.code === form[key];
+    });
+    return filtered.length ? filtered : all;
+  };
+
   const renderSegment = (s: SegmentDef, optional = false) => {
-    const opts = values[s.key] || [];
+    const opts = optsFor(s.key);
+    const hiddenCount = (values[s.key]?.length || 0) - opts.length;
     const fieldSugg = !form[s.key] ? sugg.suggestions.find((x) => x.key === s.key) : null;
     const isNext = sugg.nextField === s.key && !form[s.key];
+    const baseHint = form[s.key] ? descFor(s.key, form[s.key]) : (isNext ? "Suggested next step — pick from below" : s.help);
+    const hint = hiddenCount > 0 ? `${baseHint ? baseHint + " · " : ""}filtered to ${opts.length} for this product` : baseHint;
     return (
-      <Field key={s.key} label={s.label + (isNext ? "  👉 next" : "")} required={!optional}
-        hint={form[s.key] ? descFor(s.key, form[s.key]) : (isNext ? "Suggested next step — pick from below" : s.help)}>
+      <Field key={s.key} label={s.label + (isNext ? "  👉 next" : "")} required={!optional} hint={hint}>
         <select className="select" value={form[s.key] ?? ""} onChange={(e) => set(s.key, e.target.value)}
           style={isNext ? { borderColor: "var(--green)", boxShadow: "0 0 0 3px var(--green-50)" } : undefined}>
           {optional && <option value="">— None (skip) —</option>}
