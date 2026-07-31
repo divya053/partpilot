@@ -12,52 +12,61 @@ async function loadSegValues(activeOnly = false) {
   return rows.map((v) => ({ ...v, segment_key: camelKey(v.segment_key) }));
 }
 
-// ─── Smart defaults + unusual-combination warnings ───────────────────────────
-// Learns from the registry itself: given the current draft, look at all parts
-// in the same series (product model) and (a) suggest the most common value for
-// each still-empty segment, (b) flag chosen values that are rare or unseen in
-// that series. Pure SQL statistics — improves automatically with every part.
+// ─── Progressive next-field suggestions + warnings ───────────────────────────
+// Learns from the real part numbers (seeded from the master Excel and every
+// part built since). As each field is filled the basis NARROWS to the parts
+// that match everything picked so far, so the suggestion for the next field is
+// "what everyone else who built this far chose". Falls back gracefully so it
+// keeps helping even for brand-new combinations. Also returns `nextField` — the
+// first still-empty required segment — so the builder can guide the user.
+const CORE_MATCH = CORE_SEGMENTS.filter((s) => s.key !== "company");
+
 export async function computeSuggestions(draft = {}) {
-  const model = String(draft.productModel || "").trim();
-  const parts = model
-    ? await q("SELECT * FROM part_numbers WHERE product_model = ?", [model])
-    : await q("SELECT * FROM part_numbers");
+  const all = await q("SELECT * FROM part_numbers");
+  const val = (k) => String(draft[k] ?? "").trim();
+
+  // Narrow to parts matching every CORE field already chosen.
+  const filledCore = CORE_MATCH.filter((s) => val(s.key));
+  const matchOn = (keys) => all.filter((p) => keys.every((s) => String(p[snake(s.key)] ?? "") === val(s.key)));
+  let parts = matchOn(filledCore);
+  let scope = filledCore.length ? "matching parts" : "registry";
+  // Fallbacks: relax to same series, then whole registry, so suggestions persist.
+  if (!parts.length && val("productModel")) { parts = all.filter((p) => String(p.product_model ?? "") === val("productModel")); scope = "same series"; }
+  if (!parts.length) { parts = all; scope = "registry"; }
+
   const basisCount = parts.length;
   const suggestions = [];
   const warnings = [];
-  if (!basisCount) return { basisCount, scope: model || "all", suggestions, warnings };
+  let nextField = null;
 
   for (const s of ALL) {
     if (s.key === "productModel" || s.key === "company") continue;
     const col = snake(s.key);
     const freq = new Map();
-    for (const p of parts) {
-      const v = p[col];
-      if (v == null || v === "") continue;
-      freq.set(v, (freq.get(v) || 0) + 1);
-    }
+    for (const p of parts) { const v = p[col]; if (v != null && v !== "") freq.set(v, (freq.get(v) || 0) + 1); }
 
-    const chosen = String(draft[s.key] || "").trim();
+    const chosen = val(s.key);
+    const isCore = CORE_MATCH.some((c) => c.key === s.key);
     if (chosen) {
       const cnt = freq.get(chosen) || 0;
       if (basisCount >= 5 && cnt === 0) {
-        warnings.push({ key: s.key, label: s.label, code: chosen,
-          message: `${s.label} "${chosen}" has never been used in the ${model || "registry"} series (${basisCount} existing parts) — double-check it.` });
+        warnings.push({ key: s.key, label: s.label, code: chosen, message: `${s.label} “${chosen}” isn't used by any of the ${basisCount} matching parts — double-check it.` });
       } else if (basisCount >= 8 && cnt / basisCount < 0.1) {
-        warnings.push({ key: s.key, label: s.label, code: chosen,
-          message: `${s.label} "${chosen}" is unusual for this series — only ${cnt} of ${basisCount} parts use it.` });
+        warnings.push({ key: s.key, label: s.label, code: chosen, message: `${s.label} “${chosen}” is unusual here — only ${cnt} of ${basisCount} matching parts use it.` });
       }
-    } else if (freq.size) {
-      const [top, cnt] = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
-      const share = cnt / basisCount;
-      const isOptional = OPTIONAL_SEGMENTS.some((o) => o.key === s.key);
-      // Only push optional add-ons when the series genuinely tends to use them.
-      if (!isOptional || share >= 0.5) {
-        suggestions.push({ key: s.key, label: s.label, code: top, count: cnt, share: Math.round(share * 100) });
+    } else {
+      if (isCore && !nextField) nextField = s.key; // first empty required field = guide here
+      if (freq.size) {
+        const [top, cnt] = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
+        const share = cnt / basisCount;
+        const isOptional = OPTIONAL_SEGMENTS.some((o) => o.key === s.key);
+        if (!isOptional || share >= 0.5) {
+          suggestions.push({ key: s.key, label: s.label, code: top, count: cnt, share: Math.round(share * 100) });
+        }
       }
     }
   }
-  return { basisCount, scope: model || "all", suggestions, warnings };
+  return { basisCount, scope, suggestions, warnings, nextField };
 }
 
 // ─── Plain-English → segment codes ───────────────────────────────────────────

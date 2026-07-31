@@ -74,14 +74,14 @@ export default function Builder() {
   // in the selected series. Pure statistics — improves with every saved part.
   type Suggestion = { key: string; label: string; code: string; count: number; share: number };
   type Warning = { key: string; label: string; code: string; message: string };
-  const [sugg, setSugg] = useState<{ basisCount: number; suggestions: Suggestion[]; warnings: Warning[] }>({ basisCount: 0, suggestions: [], warnings: [] });
+  type Sugg = { basisCount: number; suggestions: Suggestion[]; warnings: Warning[]; nextField?: string | null };
+  const EMPTY_SUGG: Sugg = { basisCount: 0, suggestions: [], warnings: [], nextField: null };
+  const [sugg, setSugg] = useState<Sugg>(EMPTY_SUGG);
   useEffect(() => {
-    if (!form.productModel) { setSugg({ basisCount: 0, suggestions: [], warnings: [] }); return; }
+    if (!form.productModel) { setSugg(EMPTY_SUGG); return; }
     const t = setTimeout(() => {
-      api.post<typeof sugg>("/ai/suggest", form)
-        .then(setSugg)
-        .catch(() => setSugg({ basisCount: 0, suggestions: [], warnings: [] }));
-    }, 350);
+      api.post<Sugg>("/ai/suggest", form).then(setSugg).catch(() => setSugg(EMPTY_SUGG));
+    }, 300);
     return () => clearTimeout(t);
   }, [partNumber]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -149,12 +149,25 @@ export default function Builder() {
 
   const renderSegment = (s: SegmentDef, optional = false) => {
     const opts = values[s.key] || [];
+    const fieldSugg = !form[s.key] ? sugg.suggestions.find((x) => x.key === s.key) : null;
+    const isNext = sugg.nextField === s.key && !form[s.key];
     return (
-      <Field key={s.key} label={s.label} required={!optional} hint={form[s.key] ? descFor(s.key, form[s.key]) : s.help}>
-        <select className="select" value={form[s.key] ?? ""} onChange={(e) => set(s.key, e.target.value)}>
+      <Field key={s.key} label={s.label + (isNext ? "  👉 next" : "")} required={!optional}
+        hint={form[s.key] ? descFor(s.key, form[s.key]) : (isNext ? "Suggested next step — pick from below" : s.help)}>
+        <select className="select" value={form[s.key] ?? ""} onChange={(e) => set(s.key, e.target.value)}
+          style={isNext ? { borderColor: "var(--green)", boxShadow: "0 0 0 3px var(--green-50)" } : undefined}>
           {optional && <option value="">— None (skip) —</option>}
           {opts.map((o) => <option key={o.id} value={o.code}>{resolveDesc(o) || o.code}</option>)}
         </select>
+        {fieldSugg && (
+          <div className="flex" style={{ gap: 6, marginTop: 5, fontSize: 11.5, flexWrap: "wrap" }}>
+            <span className="muted">💡 Most used here:</span>
+            <button type="button" className="btn sm" style={{ padding: "2px 9px" }} onClick={() => set(s.key, fieldSugg.code)}>
+              {descFor(s.key, fieldSugg.code) || fieldSugg.code}
+            </button>
+            <span className="muted">{fieldSugg.count}/{sugg.basisCount}</span>
+          </div>
+        )}
       </Field>
     );
   };
