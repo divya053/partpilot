@@ -505,7 +505,12 @@ function MatrixEditor({ segmentKey, segLabel, models, onSaved }: { segmentKey: s
             <thead><tr>
               <th style={{ position: "sticky", left: 0, background: "#fbfcfd", zIndex: 2 }}>Code</th>
               <th style={{ position: "sticky", left: 60, background: "#fbfcfd", zIndex: 2, minWidth: 140 }}>Default</th>
-              {shownModels.map((m) => <th key={m.code} title={m.description} style={{ whiteSpace: "nowrap" }}>{m.code}</th>)}
+              {shownModels.map((m) => (
+                <th key={m.code} title={`${m.code} — ${m.description}`} style={{ minWidth: 130, verticalAlign: "bottom" }}>
+                  <div style={{ fontWeight: 700, whiteSpace: "normal", lineHeight: 1.25 }}>{m.description || m.code}</div>
+                  <div className="mono muted" style={{ fontSize: 10, fontWeight: 400 }}>{m.code}</div>
+                </th>
+              ))}
             </tr></thead>
             <tbody>
               {vals.map((v) => (
