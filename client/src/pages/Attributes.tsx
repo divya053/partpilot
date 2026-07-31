@@ -28,6 +28,7 @@ export default function Attributes() {
   const [impFile, setImpFile] = useState("");
   const [impBusy, setImpBusy] = useState(false);
   const [impResult, setImpResult] = useState<{ updated: number } | null>(null);
+  const [impSkipped, setImpSkipped] = useState<string[]>([]);
 
   const load = () => api.get<SegmentDef[]>("/segments/summary").then(setDefs).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -89,13 +90,16 @@ export default function Attributes() {
       const labelCol = headers.findIndex((h: string) => /(attribute|label|name)/.test(h) && !/key/.test(h));
       const helpCol = headers.findIndex((h: string) => /(help|desc)/.test(h));
       const rows: AttrRow[] = [];
+      const skipped: string[] = [];
       for (const r of grid.slice(1)) {
         const raw = keyCol >= 0 ? String(r[keyCol] ?? "").trim() : "";
+        if (!raw) continue;
         const d = defs.find((x) => x.key.toLowerCase() === raw.toLowerCase() || (x.label || "").toLowerCase() === raw.toLowerCase());
-        if (!d) continue;
+        if (!d) { skipped.push(raw); continue; } // key changed / unknown — can't rename keys
         rows.push({ key: d.key, label: labelCol >= 0 ? String(r[labelCol] ?? "").trim() || d.label : d.label, help: helpCol >= 0 ? String(r[helpCol] ?? "").trim() : (d.help || "") });
       }
-      if (!rows.length) { toast("No matching attributes found. Keep the Key column from the template.", "error"); return; }
+      setImpSkipped(skipped);
+      if (!rows.length) { toast("No matching attributes found — the Key column must keep the original keys.", "error"); return; }
       setImpRows(rows); setImpFile(file.name);
     } catch { toast("Could not read that file. Use the .xlsx template.", "error"); }
   };
@@ -112,13 +116,13 @@ export default function Attributes() {
     <Layout title="Attributes" subtitle="The segments that make up every IKIO part number, in order."
       actions={editable && <>
         {editMode && dirty.length > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all changes (${dirty.length})`}</button>}
-        {!editMode && <button className="btn" onClick={() => { setImpRows([]); setImpFile(""); setImpResult(null); setImpOpen(true); }}>⬆ Import Excel</button>}
+        {!editMode && <button className="btn" onClick={() => { setImpRows([]); setImpFile(""); setImpResult(null); setImpSkipped([]); setImpOpen(true); }}>⬆ Import Excel</button>}
         <button className={"btn" + (editMode ? " danger" : "")} onClick={toggleEdit}>{editMode ? "Done" : "✎ Edit attributes"}</button>
       </>}>
       <div className="card">
         <div className="table-wrap">
           <table className="tbl">
-            <thead><tr><th>#</th><th>Attribute</th><th>Key</th><th>Type</th><th>Values</th><th>Help / description</th>{editable && <th></th>}</tr></thead>
+            <thead><tr><th>#</th><th>Attribute (name)</th><th title="Fixed technical identifier — cannot be changed">Key 🔒</th><th>Type</th><th>Values</th><th>Help / description</th>{editable && <th></th>}</tr></thead>
             <tbody>
               {defs.map((d, i) => {
                 const isDirty = !!edits[d.key];
@@ -167,8 +171,14 @@ export default function Attributes() {
           <div className="grid" style={{ gap: 12 }}>
             <div className="insight info">
               <div className="t">Bulk-update attribute names &amp; help text</div>
-              <div className="d">Download the template, edit the <b>Attribute</b> (name) and <b>Help</b> columns, and re-upload. Rows are matched by <span className="mono">Key</span>. Type and add-on letter can't be changed here.</div>
+              <div className="d">Download the template, edit only the <b>Attribute</b> (name) and <b>Help</b> columns, and re-upload. Rows are matched by <span className="mono">Key</span> — <b>don't change the Key column</b>: keys are fixed identifiers wired into the part-number format, so a changed key can't be matched and its row is skipped.</div>
             </div>
+            {impSkipped.length > 0 && (
+              <div className="insight warning">
+                <div className="t">{impSkipped.length} row(s) skipped — unknown key</div>
+                <div className="d">These keys don't exist and were ignored (keys can't be renamed): <span className="mono">{impSkipped.slice(0, 8).join(", ")}{impSkipped.length > 8 ? "…" : ""}</span></div>
+              </div>
+            )}
             <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
               <button className="btn" onClick={downloadTemplate}>⬇ Download template</button>
               <label className="btn primary" style={{ cursor: "pointer" }}>⬆ Upload edited sheet
