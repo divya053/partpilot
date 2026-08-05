@@ -2,12 +2,40 @@ import express from "express";
 import { q } from "../db.js";
 import { aiEnabled, chat, computeInsights } from "../ai.js";
 import { buildAskContext, computeSuggestions, parseDescription, decodePartNumber } from "../assistant.js";
+import { agentChat, loadKnowledge, validate, guide } from "../agent.js";
 import { buildPartNumber, ALL_SEGMENTS } from "../segments.js";
 
 const router = express.Router();
 
 router.get("/status", (_req, res) => {
   res.json({ enabled: aiEnabled() });
+});
+
+// ─── Build Agent — conversational, data-grounded part-number builder ─────────
+// One turn: takes the chat history + the current builder draft, returns a reply,
+// the segment codes to set (validated against the catalog), the next step, and
+// any warnings. Grounded in the real applicability matrix + built parts; warns
+// but never blocks. Works with or without an LLM configured.
+router.post("/agent", async (req, res) => {
+  const { messages, draft } = req.body || {};
+  try {
+    res.json(await agentChat({ messages: Array.isArray(messages) ? messages : [], draft: draft || {} }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Live validation + next-step guide for a draft (no chat turn / no LLM call).
+router.post("/agent/check", async (req, res) => {
+  try {
+    const knowledge = await loadKnowledge();
+    const draft = req.body || {};
+    const v = validate(draft, knowledge);
+    const g = guide(draft, knowledge);
+    res.json({ warnings: v.issues, basis: v.basis, scope: v.scope, nextField: g.nextField, nextLabel: g.label, options: g.options });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Data-grounded insights (deterministic + optional LLM narrative)

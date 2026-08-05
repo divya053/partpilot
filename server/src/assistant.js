@@ -74,7 +74,7 @@ export async function computeSuggestions(draft = {}) {
 // and each catalog value's description/code against the text. When an LLM is
 // configured it refines the mapping, but every code it returns is validated
 // against the real catalog — it can never invent one.
-export async function parseDescription(text) {
+export async function parseDescription(text, { useAi = true } = {}) {
   const segValues = await loadSegValues(true);
   const byKey = new Map();
   for (const v of segValues) {
@@ -103,9 +103,12 @@ export async function parseDescription(text) {
         if (!best || desc.length > best.len) best = { code: v.code, len: desc.length };
         continue;
       }
-      // Word-level: any 4+ char word of the description present in the text
+      // Word-level: all 4+ char words of the description present in the text.
+      // A SINGLE such word must be distinctive (≥5 chars) — otherwise common
+      // words like "type"/"full"/"wide" cause false matches across segments
+      // (e.g. "type IV" distribution wrongly hitting variant "0A - Type A").
       const words = desc.split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
-      if (words.length && words.every((w) => lower.includes(w))) {
+      if (words.length && words.every((w) => lower.includes(w)) && (words.length >= 2 || words[0].length >= 5)) {
         const len = words.join(" ").length;
         if (!best || len > best.len) best = { code: v.code, len };
         continue;
@@ -117,7 +120,7 @@ export async function parseDescription(text) {
     if (best) fields[s.key] = best.code;
   }
 
-  if (!aiEnabled()) return { fields, source: "deterministic" };
+  if (!useAi || !aiEnabled()) return { fields, source: "deterministic" };
 
   // LLM refinement over the SAME catalog, strictly validated.
   try {

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { Field, StatusBadge, FileUpload } from "../components/ui";
+import { AgentChat } from "../components/AgentChat";
 import { api } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
@@ -274,6 +275,16 @@ export default function Builder() {
       </>}>
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }} className="grid">
+
+          {/* Conversational build agent — fills the form from plain English */}
+          {can("write") && (
+            <AgentChat
+              form={form}
+              meta={meta}
+              onApply={(fields) => setForm((f) => ({ ...f, ...fields }))}
+              descFor={descFor}
+            />
+          )}
 
           {/* Step 1: Configure */}
           <div className="card">
