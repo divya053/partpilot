@@ -125,6 +125,32 @@ export function crudRouter(cfg) {
     res.json({ created, updated, deleted, errors });
   });
 
+  // BULK mass-update — apply the same fields to many rows (NetSuite mass update)
+  router.post("/bulk-update", requireCap("write"), async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
+    const patch = req.body?.patch || {};
+    if (!ids.length) return res.status(400).json({ error: "ids[] required" });
+    const keys = columns.filter((c) => c in patch);
+    if (!keys.length) return res.status(400).json({ error: "No writable fields in patch" });
+    const sets = keys.map((c) => `${c} = ?`).join(", ");
+    const vals = keys.map((c) => (jsonColumns.includes(c) ? JSON.stringify(patch[c]) : patch[c]));
+    const [result] = await pool.query(
+      `UPDATE ${table} SET ${sets} WHERE id IN (${ids.map(() => "?").join(",")})`,
+      [...vals, ...ids],
+    );
+    await logAudit(req, module, "Bulk updated", `Mass-updated ${result.affectedRows} row(s): ${keys.join(", ")}`);
+    res.json({ updated: result.affectedRows });
+  });
+
+  // BULK delete — remove many rows at once
+  router.post("/bulk-delete", requireCap("delete"), async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
+    if (!ids.length) return res.status(400).json({ error: "ids[] required" });
+    const [result] = await pool.query(`DELETE FROM ${table} WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+    await logAudit(req, module, "Bulk deleted", `Deleted ${result.affectedRows} row(s)`);
+    res.json({ deleted: result.affectedRows });
+  });
+
   // UPDATE (partial)
   router.patch("/:id", requireCap("write"), async (req, res) => {
     const keys = columns.filter((c) => c in req.body);

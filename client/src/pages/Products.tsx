@@ -6,10 +6,10 @@ export default function Products() {
     <CrudPage<Product>
       title="Products" subtitle="Manage the product families behind your part numbers." endpoint="/products" singular="Product"
       columns={[
-        { header: "Product Name", render: (r) => <strong>{r.name}</strong> },
-        { header: "Model Code", render: (r) => <span className="mono">{r.model_code || "—"}</span> },
-        { header: "Category", render: (r) => r.category },
-        { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+        { header: "Product Name", editKey: "name", render: (r) => <strong>{r.name}</strong> },
+        { header: "Model Code", editKey: "model_code", render: (r) => <span className="mono">{r.model_code || "—"}</span> },
+        { header: "Category", editKey: "category", render: (r) => r.category },
+        { header: "Status", editKey: "status", render: (r) => <StatusBadge status={r.status} /> },
       ]}
       fields={[
         { key: "name", label: "Product Name", required: true },

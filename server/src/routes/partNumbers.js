@@ -1,6 +1,6 @@
 import express from "express";
 import { pool, q, one } from "../db.js";
-import { requireCap } from "../auth.js";
+import { requireCap, can } from "../auth.js";
 import { logAudit } from "../audit.js";
 import { buildPartNumber, partSegments, ALL_KEYS } from "../segments.js";
 
@@ -86,6 +86,82 @@ router.post("/check", async (req, res) => {
   }
 
   res.json({ partNumber, duplicate: !!existing, existing: existing ? mapLite(existing) : null, similar });
+});
+
+// ─── Bulk: mass-update selected parts ────────────────────────────────────────
+// Apply the same field(s) to many parts at once (NetSuite-style mass update).
+// part_number is recomputed per row from its merged segment fields.
+router.post("/bulk-update", requireCap("write"), async (req, res) => {
+  const { ids, patch } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: "ids[] required" });
+  const data = pickWritable(patch || {});
+  if (!Object.keys(data).length) return res.status(400).json({ error: "No writable fields in patch" });
+
+  let updated = 0;
+  for (const id of ids) {
+    const existing = await one("SELECT * FROM part_numbers WHERE id = ?", [id]);
+    if (!existing) continue;
+    const partNumber = buildPartNumber({ ...toRow(existing), ...data });
+    const sets = [], params = [];
+    for (const [k, v] of Object.entries(data)) { sets.push(`${snake(k)} = ?`); params.push(JSON_FIELDS.includes(k) ? JSON.stringify(v) : v); }
+    sets.push("part_number = ?"); params.push(partNumber, id);
+    await pool.query(`UPDATE part_numbers SET ${sets.join(", ")} WHERE id = ?`, params);
+    updated++;
+  }
+  await logAudit(req, "Part Number", "Bulk updated", `Mass-updated ${updated} part(s): ${Object.keys(data).join(", ")}`);
+  res.json({ updated });
+});
+
+// ─── Bulk: delete selected parts ─────────────────────────────────────────────
+router.post("/bulk-delete", requireCap("delete"), async (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: "ids[] required" });
+  const nums = ids.map(Number).filter(Boolean);
+  if (!nums.length) return res.status(400).json({ error: "no valid ids" });
+  const [result] = await pool.query(`DELETE FROM part_numbers WHERE id IN (${nums.map(() => "?").join(",")})`, nums);
+  await logAudit(req, "Part Number", "Bulk deleted", `Deleted ${result.affectedRows} part(s)`);
+  res.json({ deleted: result.affectedRows });
+});
+
+// ─── Bulk: import parts from a spreadsheet (upsert by generated part number) ──
+// Each row's part_number is computed from its segment fields; existing parts
+// (same number) are updated, new ones inserted. Optional deleteMissing mirrors
+// the file exactly (gated by delete permission).
+router.post("/bulk", requireCap("write"), async (req, res) => {
+  const { rows, deleteMissing } = req.body || {};
+  if (!Array.isArray(rows)) return res.status(400).json({ error: "rows[] required" });
+  if (deleteMissing && !can(req.user?.role, "delete")) return res.status(403).json({ error: "Your role can't delete records." });
+
+  let created = 0, updated = 0, deleted = 0;
+  const errors = [];
+  const present = new Set();
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      const data = pickWritable(rows[i] || {});
+      const partNumber = buildPartNumber(data);
+      present.add(partNumber);
+      const existing = await one("SELECT id FROM part_numbers WHERE part_number = ?", [partNumber]);
+      if (existing) {
+        const sets = [], params = [];
+        for (const [k, v] of Object.entries(data)) { sets.push(`${snake(k)} = ?`); params.push(JSON_FIELDS.includes(k) ? JSON.stringify(v) : v); }
+        if (sets.length) { params.push(existing.id); await pool.query(`UPDATE part_numbers SET ${sets.join(", ")} WHERE id = ?`, params); }
+        updated++;
+      } else {
+        const cols = ["part_number", ...Object.keys(data).map(snake)];
+        const vals = [partNumber, ...Object.keys(data).map((k) => JSON_FIELDS.includes(k) ? JSON.stringify(data[k]) : data[k])];
+        if (!cols.includes("created_by")) { cols.push("created_by"); vals.push(req.user?.display_name || "Import"); }
+        await pool.query(`INSERT INTO part_numbers (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`, vals);
+        created++;
+      }
+    } catch (e) { errors.push({ row: i + 1, error: e.message }); }
+  }
+  if (deleteMissing && present.size) {
+    const arr = [...present];
+    const [r] = await pool.query(`DELETE FROM part_numbers WHERE part_number NOT IN (${arr.map(() => "?").join(",")})`, arr);
+    deleted = r.affectedRows;
+  }
+  await logAudit(req, "Part Number", "Bulk import", `Imported parts: ${created} created, ${updated} updated, ${deleted} deleted`);
+  res.json({ created, updated, deleted, errors });
 });
 
 // ─── List (search + filters + pagination) ────────────────────────────────────

@@ -6,10 +6,10 @@ export default function Categories() {
     <CrudPage<Category>
       title="Categories" subtitle="Fixture categories used to classify part numbers." endpoint="/categories" singular="Category"
       columns={[
-        { header: "Category", render: (r) => <strong>{r.name}</strong> },
-        { header: "Code", render: (r) => <span className="mono">{r.code || "—"}</span> },
-        { header: "Description", render: (r) => <span className="muted">{r.description || "—"}</span> },
-        { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+        { header: "Category", editKey: "name", render: (r) => <strong>{r.name}</strong> },
+        { header: "Code", editKey: "code", render: (r) => <span className="mono">{r.code || "—"}</span> },
+        { header: "Description", editKey: "description", render: (r) => <span className="muted">{r.description || "—"}</span> },
+        { header: "Status", editKey: "status", render: (r) => <StatusBadge status={r.status} /> },
       ]}
       fields={[
         { key: "name", label: "Category Name", required: true },

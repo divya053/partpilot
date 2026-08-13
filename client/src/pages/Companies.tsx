@@ -11,11 +11,11 @@ export default function Companies() {
     <CrudPage<Company>
       title="Companies" subtitle="Manage companies, customers and distributors." endpoint="/companies" singular="Company"
       columns={[
-        { header: "Company Name", render: (r) => <strong>{r.name}</strong> },
-        { header: "Type", render: (r) => TYPE_LABEL[r.type] || r.type },
-        { header: "Contact", render: (r) => r.contact_name || "—" },
-        { header: "Email", render: (r) => <span className="muted">{r.email || "—"}</span> },
-        { header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+        { header: "Company Name", editKey: "name", render: (r) => <strong>{r.name}</strong> },
+        { header: "Type", editKey: "type", render: (r) => TYPE_LABEL[r.type] || r.type },
+        { header: "Contact", editKey: "contact_name", render: (r) => r.contact_name || "—" },
+        { header: "Email", editKey: "email", render: (r) => <span className="muted">{r.email || "—"}</span> },
+        { header: "Status", editKey: "status", render: (r) => <StatusBadge status={r.status} /> },
       ]}
       fields={[
         { key: "name", label: "Company Name", required: true },

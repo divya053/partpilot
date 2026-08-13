@@ -13,8 +13,15 @@ type ImportResult = { created: number; updated: number; deleted?: number; errors
  * each column to a field, previews, and posts to `${endpoint}/bulk`. Rows are
  * matched (update vs insert) on `keyColumn` (defaults to the "name" field).
  */
-export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onClose, onDone }: {
-  title: string; endpoint: string; singular: string; fields: FieldDef[]; keyColumn?: string; onClose: () => void; onDone: () => void;
+export function ImportWizard({ title, endpoint, singular, fields, keyColumn, keyless = false, getExisting, onClose, onDone }: {
+  title: string; endpoint: string; singular: string; fields: FieldDef[]; keyColumn?: string;
+  // keyless: rows are upserted server-side (e.g. part numbers, keyed by a value
+  // the server computes), so no key column need be mapped and sync is hidden.
+  keyless?: boolean;
+  // getExisting: override how current records are fetched (for endpoints that
+  // don't return a bare array, e.g. /part-numbers → { data, total }).
+  getExisting?: () => Promise<Record<string, unknown>[]>;
+  onClose: () => void; onDone: () => void;
 }) {
   const toast = useToast();
   const { can } = useAuth();
@@ -28,6 +35,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
   const [current, setCurrent] = useState<Record<string, unknown>[]>([]);
 
   const norm = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const fetchExisting = getExisting || (() => api.get<Record<string, unknown>[]>(endpoint));
   const key = keyColumn || (fields.find((f) => f.key === "name") ? "name" : fields[0]?.key) || "";
   const keyLabel = fields.find((f) => f.key === key)?.label || key;
   const isList = (k: string) => fields.find((f) => f.key === k)?.type === "list";
@@ -51,7 +59,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
       const grid = XLSX.utils.sheet_to_json<any[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false, blankrows: false });
       const hdrs = (grid[0] || []).map((c: any) => String(c).trim());
       setHeaders(hdrs); setRows(grid.slice(1) as string[][]); setFileName(file.name); autoMap(hdrs);
-      api.get<Record<string, unknown>[]>(endpoint).then(setCurrent).catch(() => setCurrent([]));
+      fetchExisting().then(setCurrent).catch(() => setCurrent([]));
     } catch { toast("Could not read that file. Use .xlsx or .csv.", "error"); }
   };
 
@@ -61,7 +69,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
     try {
       const XLSX = await import("xlsx");
       let existing: Record<string, unknown>[] = [];
-      try { existing = await api.get<Record<string, unknown>[]>(endpoint); } catch { /* export headers only */ }
+      try { existing = await fetchExisting(); } catch { /* export headers only */ }
       const header = fields.map((f) => f.label);
       const body = existing.map((r) => fields.map((f) => {
         const v = r[f.key];
@@ -94,7 +102,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
   }, [map, rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasKey = Object.values(map).includes(key);
-  const canImport = built.length > 0 && hasKey;
+  const canImport = built.length > 0 && (keyless || hasKey);
 
   // Records in the system whose key is NOT in the uploaded file (would be deleted in sync mode).
   const missingCount = useMemo(() => {
@@ -126,7 +134,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
       <div className="grid" style={{ gap: 14 }}>
         <div className="insight info">
           <div className="t">Bulk import with column mapping</div>
-          <div className="d">Upload a spreadsheet and map each column to a field. Rows are matched by <span className="mono">{keyLabel}</span> — existing records are updated, new ones added.</div>
+          <div className="d">Upload a spreadsheet and map each column to a field. Rows are matched by <span className="mono">{keyless ? "the generated part number" : keyLabel}</span> — existing records are updated, new ones added.</div>
         </div>
         <div className="flex" style={{ gap: 8, flexWrap: "wrap" }}>
           <label className="btn primary" style={{ cursor: "pointer" }}>⬆ Choose file (.xlsx / .csv)
@@ -159,7 +167,7 @@ export function ImportWizard({ title, endpoint, singular, fields, keyColumn, onC
 
         {headers.length > 0 && (
           <div className={"insight " + (canImport ? "success" : "warning")}>
-            <div className="d">{!hasKey ? `Map a column to ${keyLabel} (the match key) to continue.` : <><b>{built.length}</b> row(s) ready to import.</>}</div>
+            <div className="d">{!keyless && !hasKey ? `Map a column to ${keyLabel} (the match key) to continue.` : <><b>{built.length}</b> row(s) ready to import.</>}</div>
           </div>
         )}
 

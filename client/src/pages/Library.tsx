@@ -2,10 +2,28 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { StatusBadge, Spinner, Empty, Pager, useConfirm } from "../components/ui";
+import { ImportWizard } from "../components/ImportWizard";
+import { useBulkSelect, SelectAll, BulkBar, InlineEdit, MassField } from "../components/bulk";
+import type { FieldDef } from "../components/CrudPage";
 import { api, qs, API_BASE } from "../lib/api";
 import { useToast } from "../lib/toast";
 import { useAuth } from "../lib/auth";
 import { PartNumber, Company, Category } from "../lib/types";
+
+// Fields offered when bulk-importing part numbers. Keys match the segment /
+// metadata fields the server accepts; the generated part number is recomputed.
+const PART_IMPORT_FIELDS: FieldDef[] = [
+  { key: "productCategory", label: "Category" }, { key: "productName", label: "Product Name" }, { key: "sku", label: "SKU" },
+  { key: "company", label: "Company Code" }, { key: "productModel", label: "Product Model" }, { key: "versionVariant", label: "Version/Variant" },
+  { key: "sizeVariant", label: "Size Variant" }, { key: "powerType", label: "Power Type" }, { key: "maxPower", label: "Max Power" },
+  { key: "voltageRange", label: "Voltage Range" }, { key: "dimming", label: "Dimming" }, { key: "cct", label: "CCT" },
+  { key: "lightDistribution", label: "Light Distribution" }, { key: "driver", label: "Driver" }, { key: "finish", label: "Finish" },
+  { key: "manufacturer", label: "Manufacturer" }, { key: "lensType", label: "Lens Type" }, { key: "emergencyOption", label: "Emergency Option" },
+  { key: "sensorOption", label: "Sensor Option" }, { key: "surgeProtection", label: "Surge Protection" }, { key: "reflectorCover", label: "Reflector/Cover" },
+  { key: "mountingOption", label: "Mounting Option" }, { key: "photocontrolOption", label: "Photocontrol Option" }, { key: "connectableOption", label: "Connectable Option" },
+  { key: "base", label: "Base" }, { key: "productStage", label: "Stage" }, { key: "status", label: "Status" },
+  { key: "vendorName", label: "Vendor Name" }, { key: "productDescription", label: "Description", type: "textarea" },
+];
 
 export default function Library() {
   const nav = useNavigate();
@@ -25,7 +43,10 @@ export default function Library() {
   const [category, setCategory] = useState(params.get("category") || "all");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
   const pageSize = 15;
+
+  const sel = useBulkSelect(rows.map((r) => r.id));
 
   useEffect(() => {
     api.get<Company[]>("/companies").then(setCompanies).catch(() => {});
@@ -51,10 +72,47 @@ export default function Library() {
     catch (e) { toast((e as Error).message, "error"); }
   };
 
+  // Inline single-cell edit → PATCH, then patch local row (keeps company_name in
+  // sync since the PATCH response doesn't join the company table).
+  const patchRow = async (id: number, patch: Record<string, string>) => {
+    const updated = await api.patch<PartNumber>(`/part-numbers/${id}`, patch);
+    setRows((rs) => rs.map((r) => r.id === id ? {
+      ...r, ...updated,
+      company_name: "companyId" in patch ? (companies.find((c) => String(c.id) === String(patch.companyId))?.name ?? undefined) : r.company_name,
+    } : r));
+  };
+
+  // ── Bulk actions ──────────────────────────────────────────────────────────
+  const massFields: MassField[] = [
+    { key: "status", label: "Status", options: [{ value: "active", label: "Active" }, { value: "draft", label: "Draft" }, { value: "deprecated", label: "Deprecated" }] },
+    { key: "productStage", label: "Stage", options: [{ value: "stocked", label: "Stocked" }, { value: "temporary", label: "Temporary" }] },
+    { key: "productCategory", label: "Category", options: categories.map((c) => ({ value: c.name, label: c.name })) },
+    { key: "companyId", label: "Company", options: [{ value: "", label: "Unassigned" }, ...companies.map((c) => ({ value: String(c.id), label: c.name }))] },
+  ];
+  const bulkApply = async (field: string, value: string) => {
+    try {
+      const r = await api.post<{ updated: number }>("/part-numbers/bulk-update", { ids: sel.ids(), patch: { [field]: value } });
+      toast(`${r.updated} part(s) updated`, "success"); sel.clear(); load();
+    } catch (e) { toast((e as Error).message, "error"); }
+  };
+  const bulkDelete = async () => {
+    const ids = sel.ids();
+    if (!(await confirm(`Delete ${ids.length} part number(s)? This cannot be undone.`))) return;
+    try {
+      const r = await api.post<{ deleted: number }>("/part-numbers/bulk-delete", { ids });
+      toast(`${r.deleted} part(s) deleted`, "success"); sel.clear(); load();
+    } catch (e) { toast((e as Error).message, "error"); }
+  };
+
+  const statusOpts = [{ value: "active", label: "Active" }, { value: "draft", label: "Draft" }, { value: "deprecated", label: "Deprecated" }];
+  const companyOpts = [{ value: "", label: "— Unassigned —" }, ...companies.map((c) => ({ value: String(c.id), label: c.name }))];
+  const categoryOpts = categories.map((c) => ({ value: c.name, label: c.name }));
+
   return (
     <Layout title="Part Number Library" subtitle="View, search and manage all part numbers."
       actions={<>
         <a className="btn" href={`${API_BASE}/export/parts.csv`}>⬇ Export CSV</a>
+        {can("write") && <button className="btn" onClick={() => setImportOpen(true)}>⬆ Import</button>}
         {can("write") && <button className="btn primary" onClick={() => nav("/builder")}>+ Create New Part Number</button>}
       </>}>
       <div className="card">
@@ -80,20 +138,41 @@ export default function Library() {
           </div>
         </div>
 
+        {sel.count > 0 && (
+          <div className="card-pad" style={{ paddingTop: 12, paddingBottom: 0 }}>
+            <BulkBar count={sel.count} massFields={can("write") ? massFields : []} onApply={bulkApply}
+              onDelete={can("delete") ? bulkDelete : undefined} canDelete={can("delete")} onClear={sel.clear} />
+          </div>
+        )}
+
         {loading ? <Spinner /> : rows.length === 0 ? <Empty title="No part numbers found" sub="Adjust filters or create a new part number." /> : (
           <div className="table-wrap">
             <table className="tbl">
               <thead><tr>
+                <th style={{ width: 34 }}><SelectAll allOn={sel.allOn} someOn={sel.someOn} onToggle={sel.toggleAll} /></th>
                 <th>Part Number</th><th>Product</th><th>Company</th><th>Category</th><th>Status</th><th style={{ textAlign: "right" }}>Actions</th>
               </tr></thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} style={sel.isSel(r.id) ? { background: "var(--green-50)" } : undefined}>
+                    <td><input type="checkbox" checked={sel.isSel(r.id)} onChange={() => sel.toggle(r.id)} style={{ cursor: "pointer" }} /></td>
                     <td><span className="mono" style={{ fontWeight: 600, cursor: "pointer" }} onClick={() => nav(`/part/${r.id}`)}>{r.partNumber}</span></td>
-                    <td>{r.productName}</td>
-                    <td className="muted">{r.company_name || "—"}</td>
-                    <td>{r.productCategory}</td>
-                    <td><StatusBadge status={r.status} /></td>
+                    <td>{can("write")
+                      ? <InlineEdit value={r.productName ?? ""} onSave={(v) => patchRow(r.id, { productName: v })} />
+                      : r.productName}</td>
+                    <td className="muted">{can("write")
+                      ? <InlineEdit type="select" value={String((r as any).companyId ?? "")} options={companyOpts}
+                          display={() => r.company_name || <span className="muted">—</span>}
+                          onSave={(v) => patchRow(r.id, { companyId: v })} />
+                      : (r.company_name || "—")}</td>
+                    <td>{can("write")
+                      ? <InlineEdit type="select" value={r.productCategory ?? ""} options={categoryOpts}
+                          onSave={(v) => patchRow(r.id, { productCategory: v })} />
+                      : r.productCategory}</td>
+                    <td>{can("write")
+                      ? <InlineEdit type="select" value={r.status ?? "active"} options={statusOpts}
+                          display={() => <StatusBadge status={r.status} />} onSave={(v) => patchRow(r.id, { status: v })} />
+                      : <StatusBadge status={r.status} />}</td>
                     <td>
                       <div className="actions-cell" style={{ justifyContent: "flex-end" }}>
                         <button className="icon-btn" title="View" onClick={() => nav(`/part/${r.id}`)}>👁</button>
@@ -112,6 +191,12 @@ export default function Library() {
           </div>
         )}
       </div>
+
+      {importOpen && (
+        <ImportWizard title="Part Numbers" endpoint="/part-numbers" singular="Part Number" fields={PART_IMPORT_FIELDS} keyless
+          getExisting={async () => (await api.get<{ data: Record<string, unknown>[] }>("/part-numbers" + qs({ pageSize: 1000 }))).data}
+          onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load(); }} />
+      )}
       {node}
     </Layout>
   );
