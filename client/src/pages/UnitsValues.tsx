@@ -33,11 +33,18 @@ export default function UnitsValues() {
   const openMatrix = () => { if (segmentKey === "all") setSegmentKey(matrixSection); setMatrixMode(true); };
 
   const [importOpen, setImportOpen] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [showHelp, setShowHelp] = useState(() => localStorage.getItem("uv_help_dismissed") !== "1");
+  const dismissHelp = () => { setShowHelp(false); localStorage.setItem("uv_help_dismissed", "1"); };
 
   useEffect(() => {
     api.get<{ all: SegmentDef[] }>("/segments/meta").then((m) => setDefs(m.all)).catch(() => {});
-    api.get<SegmentValue[]>("/segments/values" + qs({ segmentKey: "productModel" }))
-      .then((r) => setModels(r.map((v) => ({ code: v.code, description: v.description })))).catch(() => {});
+    api.get<SegmentValue[]>("/segments/values" + qs({ segmentKey: "all" })).then((all) => {
+      setModels(all.filter((v) => v.segment_key === "productModel").map((v) => ({ code: v.code, description: v.description })));
+      const c: Record<string, number> = {};
+      for (const v of all) c[v.segment_key] = (c[v.segment_key] || 0) + 1;
+      setCounts(c);
+    }).catch(() => {});
   }, []);
 
   const load = () => {
@@ -99,21 +106,64 @@ export default function UnitsValues() {
   const sectionCount = useMemo(() => rows.length, [rows]);
 
   return (
-    <Layout title="Units & Values" subtitle="Manage each segment's codes, descriptions and per-model meanings."
+    <Layout title="Units & Values" subtitle="Every code that can appear in a part number — and what each one means."
       actions={can("write") && (matrixMode ? (
         <button className="btn danger" onClick={() => setMatrixMode(false)}>← Back to table</button>
       ) : (<>
         {bulkEdit && dirtyCount > 0 && <button className="btn primary" onClick={saveAll} disabled={saving}>{saving ? "Saving…" : `Save all (${dirtyCount})`}</button>}
-        <button className={"btn" + (bulkEdit ? " danger" : "")} onClick={toggleBulk}>{bulkEdit ? "Exit bulk edit" : "✎ Bulk edit"}</button>
-        {!bulkEdit && <button className="btn" onClick={() => setImportOpen(true)}>⬆ Import from Excel</button>}
-        {!bulkEdit && <button className="btn" onClick={openMatrix}>▦ Per-model matrix</button>}
-        {!bulkEdit && <button className="btn primary" onClick={openAdd}>+ Add Value</button>}
+        <button className={"btn" + (bulkEdit ? " danger" : "")} title="Edit many descriptions and on/off toggles at once" onClick={toggleBulk}>{bulkEdit ? "Exit quick edit" : "✎ Quick edit"}</button>
+        {!bulkEdit && <button className="btn" title="Upload codes & per-product meanings from a spreadsheet" onClick={() => setImportOpen(true)}>⬆ Import Excel</button>}
+        {!bulkEdit && <button className="btn" title="Edit per-product meanings in a spreadsheet-style grid" onClick={openMatrix}>▦ Grid editor</button>}
+        {!bulkEdit && <button className="btn primary" title="Add a new code to this segment" onClick={openAdd}>+ Add code</button>}
       </>))}>
 
-      <div className="segctl" style={{ marginBottom: 14, maxWidth: "100%", overflowX: "auto", flexWrap: "nowrap" }}>
-        <button className={segmentKey === "all" ? "on" : ""} onClick={() => setSegmentKey("all")}>All</button>
-        {defs.map((d) => <button key={d.key} className={segmentKey === d.key ? "on" : ""} onClick={() => setSegmentKey(d.key)}>{d.label}</button>)}
+      {showHelp && (
+        <div className="insight info" style={{ marginBottom: 14, position: "relative" }}>
+          <button className="icon-btn" onClick={dismissHelp} title="Dismiss" style={{ position: "absolute", top: 8, right: 8 }}>✕</button>
+          <div className="t">What is this page?</div>
+          <div className="d" style={{ lineHeight: 1.6 }}>
+            Every IKIO part number is built from <b>segments</b> — Company, Product Model, CCT, Finish, and so on.
+            Each segment has a list of allowed <b>codes</b>, and each code has a plain-English <b>description</b>. This page is where you manage them.
+            <div style={{ marginTop: 8 }}>
+              <b>Why “per-product meaning”?</b> The same code can mean different things depending on the product. For example the size code{" "}
+              <span className="mono">06</span> means <i>“6 inch”</i> for a Downlight, and the version code <span className="mono">1</span> means{" "}
+              <i>“Recessed Downlight”</i> for Downlights but <i>“Series 1”</i> for High Bays. You set those product-specific meanings here too.
+            </div>
+            <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+              Anything you change here is exactly what shows up in the <b>Builder</b>’s dropdowns and the <b>AI agent</b>’s suggestions.
+            </div>
+          </div>
+        </div>
+      )}
+      {!showHelp && (
+        <div style={{ marginBottom: 10 }}>
+          <button className="btn sm" onClick={() => setShowHelp(true)}>❔ What is this page?</button>
+        </div>
+      )}
+
+      <div className="segctl" style={{ marginBottom: 12, maxWidth: "100%", overflowX: "auto", flexWrap: "nowrap" }}>
+        <button className={segmentKey === "all" ? "on" : ""} onClick={() => setSegmentKey("all")}>All segments</button>
+        {defs.map((d) => (
+          <button key={d.key} className={segmentKey === d.key ? "on" : ""} onClick={() => setSegmentKey(d.key)}>
+            {d.label}{counts[d.key] != null && <span className="muted" style={{ fontSize: 11, marginLeft: 5 }}>{counts[d.key]}</span>}
+          </button>
+        ))}
       </div>
+
+      {/* Plain-English context for the segment you're looking at */}
+      {segmentKey !== "all" && (() => {
+        const d = defs.find((x) => x.key === segmentKey);
+        if (!d) return null;
+        return (
+          <div className="insight" style={{ marginBottom: 12, background: "var(--surface-2, #f7f8fa)", border: "1px solid var(--border)" }}>
+            <div className="d" style={{ fontSize: 13 }}>
+              <b>{d.label}</b>{d.letter ? <span className="badge gray mono" style={{ marginLeft: 6 }}>{d.letter}</span> : null}
+              {d.help ? <> — {d.help}</> : null}
+              <span className="muted"> · {counts[segmentKey] ?? sectionCount} code(s)</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {matrixMode ? (
         <MatrixEditor key={matrixSection} segmentKey={matrixSection} segLabel={label(matrixSection)} models={models} onSaved={load} />
@@ -130,7 +180,7 @@ export default function UnitsValues() {
           {loading ? <Spinner /> : rows.length === 0 ? <Empty title="No values found" sub={can("write") ? "Add or import values for this segment." : undefined} /> : (
             <div className="table-wrap">
               <table className="tbl">
-                <thead><tr><th>Segment</th><th>Code</th><th>Description</th><th>Per-model meanings</th><th>Active</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
+                <thead><tr><th>Segment</th><th>Code</th><th>Description (default)</th><th title="What this code means for specific products. Blank = the default description is used everywhere.">Means differently for…</th><th>Active</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
                 <tbody>
                   {rows.map((r) => {
                     const mds = Object.entries(r.model_descriptions || {});
@@ -143,11 +193,11 @@ export default function UnitsValues() {
                           : r.description}</td>
                         <td>
                           <div className="flex" style={{ flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-                            {mds.length === 0 ? <span className="muted">—</span> : (<>
-                              {mds.slice(0, 3).map(([m, d]) => <span key={m} className="badge blue" title={String(d)}><b>{m}</b>&nbsp;{String(d).slice(0, 18)}{String(d).length > 18 ? "…" : ""}</span>)}
+                            {mds.length === 0 ? <span className="muted" title="This code uses its default description for every product">Same for all</span> : (<>
+                              {mds.slice(0, 3).map(([m, d]) => <span key={m} className="badge blue" title={`For ${m}: ${String(d)}`}><b>{m}</b>&nbsp;{String(d).slice(0, 18)}{String(d).length > 18 ? "…" : ""}</span>)}
                               {mds.length > 3 && <span className="badge gray">+{mds.length - 3} more</span>}
                             </>)}
-                            {bulkEdit && can("write") && <button className="btn sm" title="Edit per-model meanings" onClick={() => openEdit(r)}>✎ meanings</button>}
+                            {bulkEdit && can("write") && <button className="btn sm" title="Edit per-product meanings" onClick={() => openEdit(r)}>✎ meanings</button>}
                           </div>
                         </td>
                         <td>{bulkEdit
@@ -188,7 +238,8 @@ export default function UnitsValues() {
             </Field>
             <label className="flex" style={{ gap: 8 }}><input type="checkbox" checked={editing.isActive} onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })} /> Active</label>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Meaning per product model <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+              <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 2 }}>What this code means for specific products <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
+              <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>Leave empty to use the default description for every product. Add a row only where this code means something different.</div>
               {mdList.map((e, i) => (
                 <div className="flex" key={i} style={{ gap: 8, marginBottom: 6 }}>
                   <select className="select" style={{ width: 190, flexShrink: 0 }} value={e.model} onChange={(ev) => setMd(i, { model: ev.target.value })}>
@@ -205,7 +256,7 @@ export default function UnitsValues() {
         </Modal>
       )}
 
-      {importOpen && <ExcelImporter defs={defs} models={models} onClose={() => setImportOpen(false)} onDone={() => { setImportOpen(false); load(); }} />}
+      {importOpen && <ExcelImporter defs={defs} models={models} onClose={() => setImportOpen(false)} onDone={load} />}
       {node}
     </Layout>
   );
@@ -337,6 +388,7 @@ function ExcelImporter({ defs, models, onClose, onDone }: { defs: SegmentDef[]; 
       const res = await api.post<typeof result>("/segments/import-value-descriptions", { rows: built });
       setResult(res);
       toast(`${res!.updated} updated · ${res!.created} added · ${res!.withModels} with model meanings`, "success");
+      onDone(); // refresh the underlying list so new codes/meanings show
     } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); }
   };
   const setCol = (i: number, t: Target) => setMap((m) => ({ ...m, [i]: t }));
@@ -482,7 +534,7 @@ function MatrixEditor({ segmentKey, segLabel, models, onSaved }: { segmentKey: s
   return (
     <div className="card">
       <div className="card-head" style={{ flexWrap: "wrap", gap: 10 }}>
-        <div><h3>Per-model meanings — {segLabel}</h3><div className="sub">Fill a cell with what the code means for that model. Empty = use the default description.</div></div>
+        <div><h3>Per-product meanings — {segLabel}</h3><div className="sub">Each row is a code; each column is a product. Type what the code means for that product. Leave a cell blank to use the default description.</div></div>
         <button className="btn primary" style={{ marginLeft: "auto" }} onClick={saveAll} disabled={saving || dirty.size === 0}>{saving ? "Saving…" : `Save all (${dirty.size})`}</button>
       </div>
       <div className="card-pad" style={{ paddingBottom: 8 }}>
