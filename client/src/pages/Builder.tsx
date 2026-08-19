@@ -57,6 +57,20 @@ export default function Builder() {
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  // When the product model changes, drop a Version/Variant left over from a
+  // different family (e.g. keeping "SC" after switching a Wallpack to a High
+  // Bay). Only clears when the family HAS applicability data and the current
+  // code isn't part of it — so a manual choice is never fought.
+  useEffect(() => {
+    const model = String(form.productModel || "");
+    const cur = String(form.versionVariant || "");
+    if (!model || !cur) return;
+    const all = values.versionVariant || [];
+    const familyHasData = all.some((v) => v.applicable_products?.includes(model) || !!v.model_descriptions?.[model]);
+    const curApplies = all.some((v) => v.code === cur && (v.applicable_products?.includes(model) || !!v.model_descriptions?.[model]));
+    if (familyHasData && !curApplies) setForm((f) => ({ ...f, versionVariant: "" }));
+  }, [form.productModel, values]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Picking a product from the catalog fills in its Category and Product Model
   // (when the product's model code matches a real segment value), connecting the
   // Products catalog to the builder. Typing a new name just sets the name.
@@ -220,27 +234,49 @@ export default function Builder() {
   // other). Whichever dropdown has no options for the chosen model is hidden, so
   // a High Bay shows only Version and a Wallpack shows only Variant Type.
   const isVersionCode = (code: string) => /^\d+$/.test(String(code));
+  // A versionVariant value genuinely belongs to a model when the model is in its
+  // Used-By list or it has a per-model meaning. Stricter than optsFor (which
+  // shows no-dependency-data codes everywhere) so e.g. variant "0A" (Type A)
+  // doesn't leak into a Linear High Bay's Variant-Type dropdown.
+  const vvAppliesTo = (v: SegmentValue, model: string) =>
+    (v.applicable_products || []).includes(model) || !!(v.model_descriptions || {})[model];
   const renderVersionVariant = () => {
     const s = meta.core.find((x) => x.key === "versionVariant");
     if (!s) return null;
-    const opts = optsFor("versionVariant");
-    const nums = opts.filter((o) => isVersionCode(o.code));
-    const lets = opts.filter((o) => !isVersionCode(o.code));
+    const model = String(form.productModel || "");
     const cur = String(form.versionVariant || "");
-    const modelChosen = !!form.productModel;
     const curIsNum = !!cur && isVersionCode(cur);
-    // Show a sub-dropdown when it has options for this model (or no model is
-    // chosen yet), and never hide the one holding the current selection.
-    const showNum = nums.length > 0 || !modelChosen || curIsNum;
-    const showLet = lets.length > 0 || !modelChosen || (!!cur && !curIsNum);
-    const isNext = sugg.nextField === "versionVariant" && !cur;
-    const fieldSugg = !cur ? sugg.suggestions.find((x) => x.key === "versionVariant") : null;
+    const allVV = values.versionVariant || [];
 
-    const sub = (label: string, help: string, subOpts: SegmentValue[], mine: boolean) => {
+    // Only codes that apply to this model (plus the current pick). If the family
+    // has no applicability data at all, fall back to the permissive filter so
+    // the user is never stranded.
+    let pool = allVV.filter((v) => !model || vvAppliesTo(v, model) || v.code === cur);
+    if (model && pool.length === 0) pool = optsFor("versionVariant");
+    const nums = pool.filter((v) => isVersionCode(v.code));
+    const lets = pool.filter((v) => !isVersionCode(v.code));
+
+    const modelChosen = !!model;
+    // Show a side only if it has options for this model (or no model yet), and
+    // never hide the side holding the current selection.
+    const showNum = !modelChosen || nums.length > 0 || curIsNum;
+    const showLet = !modelChosen || lets.length > 0 || (!!cur && !curIsNum);
+
+    const isNextField = sugg.nextField === "versionVariant" && !cur;
+    const fieldSugg = !cur ? sugg.suggestions.find((x) => x.key === "versionVariant") : null;
+    // Exactly ONE side is the "next" one — the side that owns the suggestion, or
+    // the only visible side. Prevents both dropdowns flagging "next".
+    const suggIsNum = fieldSugg ? isVersionCode(fieldSugg.code) : null;
+    const nextSide: "num" | "let" | null = !isNextField ? null
+      : suggIsNum === true ? "num" : suggIsNum === false ? "let"
+      : showNum ? "num" : (showLet ? "let" : null);
+
+    const sub = (side: "num" | "let", label: string, help: string, subOpts: SegmentValue[], mine: boolean) => {
       const value = mine ? cur : "";
-      const owns = fieldSugg && (isVersionCode(fieldSugg.code) === (label === "Version / Series"));
+      const isNext = nextSide === side;
+      const owns = !!fieldSugg && ((side === "num") === isVersionCode(fieldSugg.code));
       return (
-        <Field key={label} label={label + (isNext ? "  👉 next" : "")} hint={value ? descFor("versionVariant", value) : (isNext ? "Suggested next step — pick from below" : help)}>
+        <Field key={label} label={label + (isNext ? "  👉 next" : "")} hint={value ? descFor("versionVariant", value) : (isNext ? "Suggested next step — pick below" : help)}>
           <select className="select" value={value} onChange={(e) => set("versionVariant", e.target.value)}
             style={isNext ? { borderColor: "var(--green)", boxShadow: "0 0 0 3px var(--green-50)" } : undefined}>
             <option value="">— None —</option>
@@ -261,8 +297,8 @@ export default function Builder() {
 
     return (
       <Fragment key="versionVariant">
-        {showNum && sub("Version / Series", "Numeric series / generation (1, 2, 3…)", nums, curIsNum)}
-        {showLet && sub("Variant Type", "Lettered type — Type A/B/C, Semi/Full cut-off, Architectural…", lets, !!cur && !curIsNum)}
+        {showNum && sub("num", "Version / Series", "Numeric series / generation (1, 2, 3…)", nums, curIsNum)}
+        {showLet && sub("let", "Variant Type", "Lettered type — Type A/B/C, Semi/Full cut-off, Architectural…", lets, !!cur && !curIsNum)}
       </Fragment>
     );
   };
