@@ -310,6 +310,35 @@ table.tbl .actions-cell { display: flex; gap: 4px; }
 .g3 { grid-template-columns: 1fr 1fr 1fr; }
 @media (max-width: 600px) { .g2, .g3 { grid-template-columns: 1fr; } }
 
+/* ─── Global responsive safeguards (apply to every page) ──────────────────────
+   Nothing may scroll the whole page sideways: the content column clips any
+   horizontal bleed, while wide tables keep their own inner scroll (.table-wrap).
+   Media and form controls never exceed their container. */
+.main { overflow-x: clip; }
+.content, .card, .row, .toolbar, .grid { max-width: 100%; }
+img, svg, video, canvas { max-width: 100%; height: auto; }
+.select, .input, .textarea { max-width: 100%; }
+.table-wrap { -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 900px) {
+  /* Headers with title + actions wrap instead of overflowing */
+  .card-head { flex-wrap: wrap; }
+}
+
+@media (max-width: 640px) {
+  /* Let any fixed-width select/input shrink to fit the screen */
+  .select, .input { min-width: 0 !important; }
+  /* Filter/toolbar controls become flexible, full-usable-width chips */
+  .toolbar .select, .toolbar .input, .toolbar > label,
+  .card-pad > .flex > .select, .card-pad > .flex > label > .select {
+    flex: 1 1 150px; width: auto !important;
+  }
+  /* Two-up modal field rows stack */
+  .modal .grid[style*="1fr 1fr"] { grid-template-columns: 1fr !important; }
+  /* Builder option grid: one comfortable column on phones */
+  .card-pad > .grid[style*="minmax"] { grid-template-columns: 1fr !important; }
+}
+
 /* ─── Friendly dashboard: hero, quick actions, tooltips, toggles ──────────── */
 .hero { background: linear-gradient(120deg, var(--green-50), #fff 62%); border: 1px solid var(--green-100); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 18px; }
 .hero .lead { font-size: 14.5px; color: var(--ink-2); margin-top: 5px; line-height: 1.55; }
