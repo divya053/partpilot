@@ -31,6 +31,11 @@ export default function Builder() {
   const [explain, setExplain] = useState<string>("");
   const [explaining, setExplaining] = useState(false);
   const [showOptional, setShowOptional] = useState(false); // add-on segments start collapsed
+  const [showAll, setShowAll] = useState<Set<string>>(new Set()); // segments where the user chose to include filtered-out options
+  const [addKey, setAddKey] = useState<string | null>(null);      // segment currently getting a new code
+  const [addCode, setAddCode] = useState("");
+  const [addDesc, setAddDesc] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -209,13 +214,69 @@ export default function Builder() {
     return filtered.length ? filtered : all;
   };
 
+  // ── Quick-add a new code to a segment, and include-all toggle ───────────────
+  const openAdd = (key: string) => { setAddKey(key); setAddCode(""); setAddDesc(""); };
+  const addValue = async (key: string) => {
+    const code = addCode.trim();
+    if (!code) return;
+    setAddBusy(true);
+    try {
+      const model = String(form.productModel || "");
+      // Pin the new code to the current model so it survives the usage recompute
+      // and shows/suggests immediately.
+      await api.post("/segments/values", { segmentKey: key, code, description: addDesc.trim() || code, ...(model ? { modelApplicability: { [model]: true } } : {}) });
+      const grouped = await api.get<Grouped>("/segments/values/grouped");
+      setValues(grouped);
+      set(key, code);
+      setAddKey(null);
+      toast(`Added “${code}” to ${meta?.core.concat(meta.optional).find((x) => x.key === key)?.label || key}`, "success");
+    } catch (e) { toast((e as Error).message, "error"); }
+    finally { setAddBusy(false); }
+  };
+  const toggleShowAll = (key: string, on: boolean) =>
+    setShowAll((s) => { const n = new Set(s); on ? n.add(key) : n.delete(key); return n; });
+
+  // The "+ Add" / "Include N more" controls + inline add form under a dropdown.
+  const fieldExtras = (key: string, hiddenCount: number) => {
+    const showingAll = showAll.has(key);
+    return (
+      <>
+        <div className="flex" style={{ gap: 8, marginTop: 6, fontSize: 11, flexWrap: "wrap", alignItems: "center" }}>
+          {can("write") && addKey !== key && (
+            <button type="button" className="btn sm" style={{ padding: "1px 8px" }} onClick={() => openAdd(key)}>+ Add</button>
+          )}
+          {hiddenCount > 0 && !showingAll && (
+            <button type="button" className="btn sm" style={{ padding: "1px 8px" }} onClick={() => toggleShowAll(key, true)}>Include {hiddenCount} more ▾</button>
+          )}
+          {hiddenCount > 0 && showingAll && (
+            <button type="button" className="btn sm" style={{ padding: "1px 8px" }} onClick={() => toggleShowAll(key, false)}>Show fewer ▴</button>
+          )}
+        </div>
+        {addKey === key && (
+          <div className="flex" style={{ gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <input className="input mono" style={{ width: 84 }} placeholder="Code" value={addCode} autoFocus
+              onChange={(e) => setAddCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addValue(key)} />
+            <input className="input" style={{ flex: 1, minWidth: 120 }} placeholder="Description" value={addDesc}
+              onChange={(e) => setAddDesc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addValue(key)} />
+            <button type="button" className="btn sm primary" disabled={addBusy || !addCode.trim()} onClick={() => addValue(key)}>{addBusy ? "…" : "Save"}</button>
+            <button type="button" className="btn sm" onClick={() => setAddKey(null)}>Cancel</button>
+          </div>
+        )}
+      </>
+    );
+  };
+
   const renderSegment = (s: SegmentDef, optional = false) => {
-    const opts = optsFor(s.key);
-    const hiddenCount = (values[s.key]?.length || 0) - opts.length;
+    const filtered = optsFor(s.key);
+    const hiddenCount = (values[s.key]?.length || 0) - filtered.length;
+    const opts = showAll.has(s.key) ? (values[s.key] || []) : filtered;
     const fieldSugg = !form[s.key] ? sugg.suggestions.find((x) => x.key === s.key) : null;
     const isNext = sugg.nextField === s.key && !form[s.key];
+    const showingAll = showAll.has(s.key);
     const baseHint = form[s.key] ? descFor(s.key, form[s.key]) : (isNext ? "Suggested next step — pick from below" : s.help);
-    const hint = hiddenCount > 0 ? `${baseHint ? baseHint + " · " : ""}filtered to ${opts.length} for this product` : baseHint;
+    const hint = hiddenCount > 0
+      ? `${baseHint ? baseHint + " · " : ""}${showingAll ? `showing all ${opts.length}` : `filtered to ${filtered.length} for this product`}`
+      : baseHint;
     return (
       <Field key={s.key} label={s.label + (isNext ? "  👉 next" : "")} required={!optional} hint={hint}>
         <select className="select" value={form[s.key] ?? ""} onChange={(e) => set(s.key, e.target.value)}
@@ -232,6 +293,7 @@ export default function Builder() {
             <span className="muted">{fieldSugg.count}/{sugg.basisCount}</span>
           </div>
         )}
+        {fieldExtras(s.key, hiddenCount)}
       </Field>
     );
   };
@@ -260,9 +322,11 @@ export default function Builder() {
 
     // Only codes that apply to this model (plus the current pick). If the family
     // has no applicability data at all, fall back to the permissive filter so
-    // the user is never stranded.
+    // the user is never stranded. "Include more" (showAll) reveals every code.
     let pool = allVV.filter((v) => !model || vvAppliesTo(v, model) || v.code === cur);
     if (model && pool.length === 0) pool = optsFor("versionVariant");
+    const vvHidden = allVV.length - pool.length;
+    if (showAll.has("versionVariant")) pool = allVV;
     const nums = pool.filter((v) => isVersionCode(v.code));
     const lets = pool.filter((v) => !isVersionCode(v.code));
 
@@ -309,6 +373,7 @@ export default function Builder() {
       <Fragment key="versionVariant">
         {showNum && sub("num", "Version / Series", "Numeric series / generation (1, 2, 3…)", nums, curIsNum)}
         {showLet && sub("let", "Variant Type", "Lettered type — Type A/B/C, Semi/Full cut-off, Architectural…", lets, !!cur && !curIsNum)}
+        <div key="vv-extras">{fieldExtras("versionVariant", vvHidden)}</div>
       </Fragment>
     );
   };

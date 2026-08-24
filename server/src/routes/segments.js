@@ -133,15 +133,16 @@ router.get("/values", async (req, res) => {
 });
 
 router.post("/values", requireCap("write"), async (req, res) => {
-  const { segmentKey, code, description, sortOrder = 0, isActive = true, applicableProducts = [], modelDescriptions = {} } = req.body;
+  const { segmentKey, code, description, sortOrder = 0, isActive = true, applicableProducts = [], modelDescriptions = {}, modelApplicability = {} } = req.body;
   if (!segmentKey || !code) return res.status(400).json({ error: "segmentKey and code are required" });
   const dupe = await one("SELECT id FROM segment_values WHERE segment_key = ? AND code = ?", [segmentKey, code]);
   if (dupe) return res.status(409).json({ error: `${code} already exists for ${segmentKey}` });
   const md = modelDescriptions && typeof modelDescriptions === "object" ? modelDescriptions : {};
+  const ma = modelApplicability && typeof modelApplicability === "object" ? modelApplicability : {};
   const [result] = await pool.query(
-    `INSERT INTO segment_values (segment_key, code, description, applicable_products, model_descriptions, sort_order, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [segmentKey, code, description || code, JSON.stringify(applicableProducts), JSON.stringify(md), sortOrder, isActive ? 1 : 0],
+    `INSERT INTO segment_values (segment_key, code, description, applicable_products, model_descriptions, model_applicability, sort_order, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [segmentKey, code, description || code, JSON.stringify(applicableProducts), JSON.stringify(md), JSON.stringify(ma), sortOrder, isActive ? 1 : 0],
   );
   const row = await one("SELECT * FROM segment_values WHERE id = ?", [result.insertId]);
   await logAudit(req, "Segment", "Created", `Added ${segmentKey} value ${code}`);
