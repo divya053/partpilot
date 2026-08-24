@@ -2,7 +2,7 @@ import express from "express";
 import { pool, q, one } from "../db.js";
 import { requireCap } from "../auth.js";
 import { logAudit } from "../audit.js";
-import { CORE_SEGMENTS, OPTIONAL_SEGMENTS, ALL_SEGMENTS } from "../segments.js";
+import { CORE_SEGMENTS, OPTIONAL_SEGMENTS, ALL_SEGMENTS, appliesToModel } from "../segments.js";
 import { SEGMENT_COLUMNS } from "../usage.js";
 
 const router = express.Router();
@@ -14,7 +14,11 @@ const parse = (r) => {
   if (r && typeof r.model_descriptions === "string") {
     try { r.model_descriptions = JSON.parse(r.model_descriptions); } catch { r.model_descriptions = {}; }
   }
+  if (r && typeof r.model_applicability === "string") {
+    try { r.model_applicability = JSON.parse(r.model_applicability); } catch { r.model_applicability = {}; }
+  }
   if (r && r.model_descriptions == null) r.model_descriptions = {};
+  if (r && r.model_applicability == null) r.model_applicability = {};
   return r;
 };
 
@@ -188,8 +192,8 @@ router.post("/import-value-descriptions", requireCap("write"), async (req, res) 
 });
 
 router.patch("/values/:id", requireCap("write"), async (req, res) => {
-  const allowed = ["code", "description", "sortOrder", "isActive", "applicableProducts", "modelDescriptions"];
-  const colMap = { sortOrder: "sort_order", isActive: "is_active", applicableProducts: "applicable_products", modelDescriptions: "model_descriptions" };
+  const allowed = ["code", "description", "sortOrder", "isActive", "applicableProducts", "modelDescriptions", "modelApplicability"];
+  const colMap = { sortOrder: "sort_order", isActive: "is_active", applicableProducts: "applicable_products", modelDescriptions: "model_descriptions", modelApplicability: "model_applicability" };
   const sets = [];
   const params = [];
   for (const key of allowed) {
@@ -199,6 +203,7 @@ router.patch("/values/:id", requireCap("write"), async (req, res) => {
     if (key === "isActive") val = val ? 1 : 0;
     if (key === "applicableProducts") val = JSON.stringify(val);
     if (key === "modelDescriptions") val = JSON.stringify(val && typeof val === "object" ? val : {});
+    if (key === "modelApplicability") val = JSON.stringify(val && typeof val === "object" ? val : {});
     sets.push(`${col} = ?`);
     params.push(val);
   }
@@ -245,6 +250,61 @@ router.post("/values/bulk", requireCap("write"), async (req, res) => {
   }
   await logAudit(req, "Segment", "Updated", `Bulk description update — ${updated} updated, ${skipped} skipped`);
   res.json({ updated, skipped, errors });
+});
+
+// ─── Model-centric config: per product model, which codes apply + what they mean ──
+// Returns every segment's codes with, FOR THIS MODEL, the effective "applies"
+// flag, whether that flag is a manual override, and the per-model meaning.
+router.get("/model-config/:model", async (req, res) => {
+  const model = String(req.params.model || "").trim();
+  if (!model) return res.status(400).json({ error: "model required" });
+  const rows = (await q("SELECT * FROM segment_values ORDER BY segment_key, sort_order, code")).map(parse);
+  const ov = await loadOverrides();
+  const segMeta = ALL_SEGMENTS.map((s) => applyOv(s, ov));
+
+  const bySeg = {};
+  for (const r of rows) {
+    if (r.segment_key === "productModel" || r.segment_key === "company") continue; // not model-scoped
+    (bySeg[r.segment_key] ||= []).push({
+      id: r.id, code: r.code, description: r.description,
+      applies: appliesToModel(r, model),
+      overridden: !!(r.model_applicability && model in r.model_applicability),
+      usedByReal: Array.isArray(r.applicable_products) && r.applicable_products.includes(model),
+      meaning: (r.model_descriptions && r.model_descriptions[model]) || "",
+      isActive: !!r.is_active,
+    });
+  }
+  const segments = segMeta
+    .filter((s) => bySeg[s.key]?.length)
+    .map((s) => ({ key: s.key, label: s.label, help: s.help, values: bySeg[s.key] }));
+  res.json({ model, segments });
+});
+
+// Save per-model applies/meaning for a set of codes in one call.
+// body: { changes: [{ id, applies:boolean, meaning:string }] }
+router.post("/model-config/:model", requireCap("write"), async (req, res) => {
+  const model = String(req.params.model || "").trim();
+  const changes = Array.isArray(req.body?.changes) ? req.body.changes : [];
+  if (!model) return res.status(400).json({ error: "model required" });
+  let updated = 0;
+  for (const ch of changes) {
+    const row = parse(await one("SELECT * FROM segment_values WHERE id = ?", [ch.id]));
+    if (!row) continue;
+    const md = { ...(row.model_descriptions || {}) };
+    const ap = { ...(row.model_applicability || {}) };
+    // Meaning: set when non-empty, remove the key when cleared.
+    const meaning = String(ch.meaning ?? "").trim();
+    if (meaning) md[model] = meaning; else delete md[model];
+    // Applicability override: store the explicit boolean the user chose.
+    ap[model] = !!ch.applies;
+    await pool.query(
+      "UPDATE segment_values SET model_descriptions = ?, model_applicability = ? WHERE id = ?",
+      [JSON.stringify(md), JSON.stringify(ap), ch.id],
+    );
+    updated++;
+  }
+  await logAudit(req, "Segment", "Model config", `Updated ${updated} code(s) for model ${model}`);
+  res.json({ updated });
 });
 
 router.delete("/values/:id", requireCap("delete"), async (req, res) => {

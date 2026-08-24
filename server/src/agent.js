@@ -13,7 +13,7 @@
 // and end-to-end validation. Per the product decision it WARNS, never blocks.
 
 import { q } from "./db.js";
-import { CORE_SEGMENTS, OPTIONAL_SEGMENTS, ALL_SEGMENTS, buildPartNumber } from "./segments.js";
+import { CORE_SEGMENTS, OPTIONAL_SEGMENTS, ALL_SEGMENTS, buildPartNumber, appliesToModel } from "./segments.js";
 import { aiEnabled, chat } from "./ai.js";
 import { parseDescription } from "./assistant.js";
 
@@ -35,12 +35,13 @@ function normalizeValue(v) {
     description: v.description || "",
     applicable_products: decodeJson(v.applicable_products) || [],
     model_descriptions: decodeJson(v.model_descriptions) || {},
+    model_applicability: decodeJson(v.model_applicability) || {},
   };
 }
 
 /** Load the full knowledge base for one request (the dataset is small). */
 export async function loadKnowledge() {
-  const values = (await q("SELECT segment_key, code, description, applicable_products, model_descriptions FROM segment_values WHERE is_active = 1")).map(normalizeValue);
+  const values = (await q("SELECT segment_key, code, description, applicable_products, model_descriptions, model_applicability FROM segment_values WHERE is_active = 1")).map(normalizeValue);
   const parts = await q("SELECT * FROM part_numbers");
   const byKey = new Map();
   for (const v of values) {
@@ -67,9 +68,8 @@ function optionsFor(byKey, key, model, current = "") {
     return all.map((v) => ({ code: v.code, meaning: meaningOf(v, model) }));
   }
   const filtered = all.filter((v) => {
-    const hasData = (v.applicable_products?.length || 0) > 0 || Object.keys(v.model_descriptions || {}).length > 0;
-    const applies = v.applicable_products?.includes(model) || !!v.model_descriptions?.[model];
-    return !hasData || applies || v.code === current;
+    const hasData = (v.applicable_products?.length || 0) > 0 || Object.keys(v.model_descriptions || {}).length > 0 || Object.keys(v.model_applicability || {}).length > 0;
+    return !hasData || appliesToModel(v, model) || v.code === current;
   });
   return (filtered.length ? filtered : all).map((v) => ({ code: v.code, meaning: meaningOf(v, model) }));
 }
@@ -83,6 +83,9 @@ function familyAppropriate(knowledge, key, model, code) {
   if (!model || key === "productModel" || key === "company") return true;
   const v = (knowledge.byKey.get(key) || []).find((x) => x.code === code);
   if (!v) return false;
+  // Manual override wins outright (both include and exclude).
+  const ov = v.model_applicability;
+  if (ov && typeof ov === "object" && model in ov) return !!ov[model];
   if ((v.applicable_products || []).includes(model) || (v.model_descriptions || {})[model]) return true;
   const col = snake(key);
   return knowledge.parts.some((p) => String(p.product_model) === model && String(p[col] ?? "") === code);

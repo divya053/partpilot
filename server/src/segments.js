@@ -34,6 +34,24 @@ export const OPTIONAL_SEGMENTS = [
 ];
 
 export const ALL_SEGMENTS = [...CORE_SEGMENTS, ...OPTIONAL_SEGMENTS];
+
+/**
+ * Does a segment value apply to a given product model?  Layered logic:
+ *   1. Manual override (model_applicability[model]) wins — true shows it,
+ *      false hides it, regardless of anything else.
+ *   2. Otherwise a per-model meaning (model_descriptions[model]) implies it applies.
+ *   3. Otherwise fall back to the auto-derived Used-By list (applicable_products).
+ * `value` may carry JSON as objects (parsed) — callers pass parsed values.
+ */
+export function appliesToModel(value, model) {
+  if (!model) return true;
+  const ov = value?.model_applicability;
+  if (ov && typeof ov === "object" && model in ov) return !!ov[model];
+  const md = value?.model_descriptions || {};
+  if (md && md[model] != null && md[model] !== "") return true;
+  const ap = value?.applicable_products || [];
+  return Array.isArray(ap) && ap.includes(model);
+}
 export const CORE_KEYS = CORE_SEGMENTS.map((s) => s.key);
 export const OPTIONAL_KEYS = OPTIONAL_SEGMENTS.map((s) => s.key);
 export const ALL_KEYS = ALL_SEGMENTS.map((s) => s.key);

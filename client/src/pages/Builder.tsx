@@ -66,8 +66,13 @@ export default function Builder() {
     const cur = String(form.versionVariant || "");
     if (!model || !cur) return;
     const all = values.versionVariant || [];
-    const familyHasData = all.some((v) => v.applicable_products?.includes(model) || !!v.model_descriptions?.[model]);
-    const curApplies = all.some((v) => v.code === cur && (v.applicable_products?.includes(model) || !!v.model_descriptions?.[model]));
+    const applies = (v: SegmentValue) => {
+      const ov = v.model_applicability;
+      if (ov && model in ov) return !!ov[model];
+      return !!v.model_descriptions?.[model] || (v.applicable_products || []).includes(model);
+    };
+    const familyHasData = all.some((v) => (v.applicable_products?.length || 0) > 0 || Object.keys(v.model_descriptions || {}).length > 0 || Object.keys(v.model_applicability || {}).length > 0);
+    const curApplies = all.some((v) => v.code === cur && applies(v));
     if (familyHasData && !curApplies) setForm((f) => ({ ...f, versionVariant: "" }));
   }, [form.productModel, values]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -184,16 +189,22 @@ export default function Builder() {
   // "Applies" = the model is in the value's Used-By list, or it has a per-model
   // meaning for this model. Values with no dependency data at all are always
   // shown, and the current selection is never hidden — so you're never stranded.
+  // Does a value apply to a model? Manual override (model_applicability) wins;
+  // otherwise a per-model meaning implies it applies; otherwise the derived
+  // Used-By list. Mirrors the server's appliesToModel so builder, agent and the
+  // Model Config page all agree.
+  const modelApplies = (v: SegmentValue, model: string): boolean => {
+    const ov = v.model_applicability;
+    if (ov && model in ov) return !!ov[model];
+    return !!(v.model_descriptions || {})[model] || (v.applicable_products || []).includes(model);
+  };
   const optsFor = (key: string): SegmentValue[] => {
     const all = values[key] || [];
     const model = String(form.productModel || "");
     if (!model || key === "productModel" || key === "company") return all;
     const filtered = all.filter((v) => {
-      const ap = v.applicable_products || [];
-      const md = v.model_descriptions || {};
-      const hasData = ap.length > 0 || Object.keys(md).length > 0;
-      const applies = ap.includes(model) || !!md[model];
-      return !hasData || applies || v.code === form[key];
+      const hasData = (v.applicable_products || []).length > 0 || Object.keys(v.model_descriptions || {}).length > 0 || Object.keys(v.model_applicability || {}).length > 0;
+      return !hasData || modelApplies(v, model) || v.code === form[key];
     });
     return filtered.length ? filtered : all;
   };
@@ -238,8 +249,7 @@ export default function Builder() {
   // Used-By list or it has a per-model meaning. Stricter than optsFor (which
   // shows no-dependency-data codes everywhere) so e.g. variant "0A" (Type A)
   // doesn't leak into a Linear High Bay's Variant-Type dropdown.
-  const vvAppliesTo = (v: SegmentValue, model: string) =>
-    (v.applicable_products || []).includes(model) || !!(v.model_descriptions || {})[model];
+  const vvAppliesTo = (v: SegmentValue, model: string) => modelApplies(v, model);
   const renderVersionVariant = () => {
     const s = meta.core.find((x) => x.key === "versionVariant");
     if (!s) return null;

@@ -15,6 +15,7 @@ const NAV = [
   { group: "Configuration" },
   { to: "/attributes", icon: "adjust", label: "Attributes" },
   { to: "/values", icon: "rows", label: "Units & Values" },
+  { to: "/model-config", icon: "box", label: "Model Config" },
   { to: "/templates", icon: "template", label: "Templates" },
   { group: "System" },
   { to: "/reports", icon: "bar", label: "Reports" },

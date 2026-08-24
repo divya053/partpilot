@@ -154,4 +154,7 @@ export async function migrate() {
   await ensureColumn("part_numbers", "ikio_spec_sheet", "ikio_spec_sheet TEXT");
   await ensureColumn("part_numbers", "image", "image TEXT");
   await ensureColumn("segment_values", "model_descriptions", "model_descriptions JSON");
+  // Manual per-model applicability overrides { modelCode: true|false }. Layers
+  // over the auto-derived applicable_products; never touched by recomputeUsage.
+  await ensureColumn("segment_values", "model_applicability", "model_applicability JSON");
 }

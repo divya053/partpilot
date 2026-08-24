@@ -26,6 +26,7 @@ export interface SegmentValue {
   description: string;
   applicable_products: string[];
   model_descriptions?: Record<string, string>;
+  model_applicability?: Record<string, boolean>;
   sort_order: number;
   is_active: number;
 }

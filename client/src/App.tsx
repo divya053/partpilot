@@ -11,6 +11,7 @@ import Products from "./pages/Products";
 import Categories from "./pages/Categories";
 import Attributes from "./pages/Attributes";
 import UnitsValues from "./pages/UnitsValues";
+import ModelConfig from "./pages/ModelConfig";
 import Templates from "./pages/Templates";
 import Reports from "./pages/Reports";
 import ImportExport from "./pages/ImportExport";
@@ -35,6 +36,7 @@ export default function App() {
       <Route path="/categories" element={<Categories />} />
       <Route path="/attributes" element={<Attributes />} />
       <Route path="/values" element={<UnitsValues />} />
+      <Route path="/model-config" element={<ModelConfig />} />
       <Route path="/templates" element={<Templates />} />
       <Route path="/reports" element={<Reports />} />
       <Route path="/import-export" element={<ImportExport />} />
