@@ -2,6 +2,7 @@ import { ReactNode, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { AssistantDock } from "./AssistantDock";
+import { PageHelp } from "./PageHelp";
 import { Icon } from "./Icon";
 
 const NAV = [
@@ -72,7 +73,7 @@ export function Layout({ title, subtitle, actions, children }: {
           </div>
           {actions && <div className="actions">{actions}</div>}
         </header>
-        <main className="content">{children}</main>
+        <main className="content"><PageHelp />{children}</main>
       </div>
 
       <AssistantDock />
