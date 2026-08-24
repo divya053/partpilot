@@ -315,6 +315,12 @@ table.tbl .actions-cell { display: flex; gap: 4px; }
    horizontal bleed, while wide tables keep their own inner scroll (.table-wrap).
    Media and form controls never exceed their container. */
 .main { overflow-x: clip; }
+
+/* Compact per-dropdown quick actions in the Builder (+ Add / Include more) */
+.field-extras { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 5px; min-height: 15px; }
+.mini-link { font-size: 11px; font-weight: 600; color: var(--ink-3); background: none; border: none; padding: 0; cursor: pointer; line-height: 1.2; }
+.mini-link:hover { color: var(--green); text-decoration: underline; }
+.field-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
 .content, .card, .row, .toolbar, .grid { max-width: 100%; }
 img, svg, video, canvas { max-width: 100%; height: auto; }
 .select, .input, .textarea { max-width: 100%; }

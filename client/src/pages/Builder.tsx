@@ -236,30 +236,32 @@ export default function Builder() {
   const toggleShowAll = (key: string, on: boolean) =>
     setShowAll((s) => { const n = new Set(s); on ? n.add(key) : n.delete(key); return n; });
 
-  // The "+ Add" / "Include N more" controls + inline add form under a dropdown.
+  // Compact, subtle "+ Add" / "Include N more" links pinned directly under a
+  // dropdown, plus the inline add form. Kept lightweight so it never competes
+  // with the dropdown itself.
   const fieldExtras = (key: string, hiddenCount: number) => {
     const showingAll = showAll.has(key);
     return (
       <>
-        <div className="flex" style={{ gap: 8, marginTop: 6, fontSize: 11, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="field-extras">
           {can("write") && addKey !== key && (
-            <button type="button" className="btn sm" style={{ padding: "1px 8px" }} onClick={() => openAdd(key)}>+ Add</button>
+            <button type="button" className="mini-link" onClick={() => openAdd(key)}>＋ Add</button>
           )}
           {hiddenCount > 0 && !showingAll && (
-            <button type="button" className="btn sm" style={{ padding: "1px 8px" }} onClick={() => toggleShowAll(key, true)}>Include {hiddenCount} more ▾</button>
+            <button type="button" className="mini-link" onClick={() => toggleShowAll(key, true)}>Include {hiddenCount} more ▾</button>
           )}
           {hiddenCount > 0 && showingAll && (
-            <button type="button" className="btn sm" style={{ padding: "1px 8px" }} onClick={() => toggleShowAll(key, false)}>Show fewer ▴</button>
+            <button type="button" className="mini-link" onClick={() => toggleShowAll(key, false)}>Show fewer ▴</button>
           )}
         </div>
         {addKey === key && (
-          <div className="flex" style={{ gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <input className="input mono" style={{ width: 84 }} placeholder="Code" value={addCode} autoFocus
-              onChange={(e) => setAddCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addValue(key)} />
-            <input className="input" style={{ flex: 1, minWidth: 120 }} placeholder="Description" value={addDesc}
-              onChange={(e) => setAddDesc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addValue(key)} />
-            <button type="button" className="btn sm primary" disabled={addBusy || !addCode.trim()} onClick={() => addValue(key)}>{addBusy ? "…" : "Save"}</button>
-            <button type="button" className="btn sm" onClick={() => setAddKey(null)}>Cancel</button>
+          <div className="field-add">
+            <input className="input mono" style={{ width: 74, height: 30, padding: "4px 8px" }} placeholder="Code" value={addCode} autoFocus
+              onChange={(e) => setAddCode(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addValue(key); if (e.key === "Escape") setAddKey(null); }} />
+            <input className="input" style={{ flex: 1, minWidth: 90, height: 30, padding: "4px 8px" }} placeholder="Description" value={addDesc}
+              onChange={(e) => setAddDesc(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addValue(key); if (e.key === "Escape") setAddKey(null); }} />
+            <button type="button" className="btn sm primary" style={{ padding: "3px 10px" }} disabled={addBusy || !addCode.trim()} onClick={() => addValue(key)}>{addBusy ? "…" : "Save"}</button>
+            <button type="button" className="btn sm" style={{ padding: "3px 8px" }} onClick={() => setAddKey(null)}>✕</button>
           </div>
         )}
       </>
@@ -345,6 +347,9 @@ export default function Builder() {
       : suggIsNum === true ? "num" : suggIsNum === false ? "let"
       : showNum ? "num" : (showLet ? "let" : null);
 
+    // Render the shared "+ Add / Include" row inside the first visible side, so
+    // it stays under its dropdown instead of floating into an empty column.
+    const extrasSide: "num" | "let" = showNum ? "num" : "let";
     const sub = (side: "num" | "let", label: string, help: string, subOpts: SegmentValue[], mine: boolean) => {
       const value = mine ? cur : "";
       const isNext = nextSide === side;
@@ -365,6 +370,7 @@ export default function Builder() {
               <span className="muted">{fieldSugg!.count}/{sugg.basisCount}</span>
             </div>
           )}
+          {side === extrasSide && fieldExtras("versionVariant", vvHidden)}
         </Field>
       );
     };
@@ -373,7 +379,6 @@ export default function Builder() {
       <Fragment key="versionVariant">
         {showNum && sub("num", "Version / Series", "Numeric series / generation (1, 2, 3…)", nums, curIsNum)}
         {showLet && sub("let", "Variant Type", "Lettered type — Type A/B/C, Semi/Full cut-off, Architectural…", lets, !!cur && !curIsNum)}
-        <div key="vv-extras">{fieldExtras("versionVariant", vvHidden)}</div>
       </Fragment>
     );
   };
